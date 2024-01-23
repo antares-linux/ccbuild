@@ -44,6 +44,10 @@ export JOBS="1"
 # script slightly but it's a requirement for debugging
 verbosity="normal"
 
+# (internal, no opt for now)
+# whether to use [l]ong or [s]hort suffixes for time units
+unitsize="l"
+
 # ------------------------------------------------------------------------------
 
 # parse command-line arguments
@@ -58,6 +62,9 @@ while [ "$#" -gt 0 ]; do
 
         # print the command line to stdout
         -c|--cmdline) printcmdline="y"; shift ;;
+
+        # whether or not to timestamp the build process
+        -t|--timestamping) timestamping="y"; shift ;;
 
         # print help
         --help) print_help; exit ;;
@@ -91,6 +98,18 @@ while [ "$#" -gt 0 ]; do
         *) target="${1%%/}"; shift ;;
     esac
 done
+
+# timestamping setup
+[ "$timestamping" = "y" ] && {
+    # these commands are required for timestamping
+    require_command date bc
+
+    # check whether nanoseconds work
+    [ "$(date +%N | wc -c 2>/dev/null)" = "10" ] && has_ns="y"
+
+    # get the beginning
+    get_timestamp start
+}
 
 # clean up the script root if desired
 [ "$full_clean" = "y" ] && {
@@ -157,7 +176,12 @@ done
 # symlink local to its parent
 run cd "$bdir/usr"
 run ln -sf . local
-
+ 
 # ------------------------------------------------------------------------------
 
-printf "success: Successfully built for $FARCH/musl (${bdir##$CCBROOT/})\n" >&2
+# get the end timestamp
+[ "$timestamping" = "y" ] && {
+    get_timestamp end
+}
+
+printf "success: Successfully built for $FARCH/musl (${bdir##$CCBROOT/})${timestamping:+ in $(diff_timestamp "$start_time" "$end_time")}\n" >&2
