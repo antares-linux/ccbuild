@@ -60,11 +60,20 @@ while [ "$#" -gt 0 ]; do
         # clean the build after it's finished
         -C|--cleanup) build_post_cleanup="y"; shift ;;
 
+        # disable post-build cleaning
+        --no-cleanup) unset build_post_cleanup; shift ;;
+
         # print the command line to stdout
         -c|--cmdline) printcmdline="y"; shift ;;
 
-        # whether or not to timestamp the build process
+        # don't print the command line to stdout (default)
+        --no-cmdline) unset printcmdline; shift ;;
+
+        # timestamp the build process
         -t|--timestamping) timestamping="y"; shift ;;
+
+        # don't timestamp the build process (default)
+        --no-timestamping) unset timestamping; shift ;;
 
         # print help
         --help) print_help; exit ;;
@@ -74,8 +83,11 @@ while [ "$#" -gt 0 ]; do
         -j*)            [ "${1##-j}" -le 1024 >&- 2>&- ] && export JOBS="${1##-j}"; shift ;;
         --jobs=*)  [ "${1##--jobs=}" -le 1024 >&- 2>&- ] && export JOBS="${1##--jobs=}"; shift ;;
 
-        # pipe compiler/configure script output to FILE instead of /dev/null
+        # pipe compiler/configure script output to ccbuild.log
         -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
+
+        # don't pipe compiler/configure script output to ccbuild.log (default)
+        --no-log) unset buildlog; shift ;;
 
         # specify a custom name for the build other than "ccb-ARCH.NUM"
         -n|--name) export bname="$2";            shift 2 ;;

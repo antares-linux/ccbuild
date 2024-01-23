@@ -5,18 +5,22 @@ print_help() {
     printf "Usage: $0 [OPTIONS]... [TARGET]
 
 Options:
-  -c, --cmdline         print relevant commands as they are processed
-      --clean           remove all cached tarballs, builds, and logs
-  -C, --cleanup         clean up unpacked sources for the current build
-      --help            print this message
-  -j, --jobs=JOBS       concurrent job/task count
-  -l, --log             log build information to ccbuild.log
-  -n, --name=NAME       name of the build (default: ccb-TARGET)
-  -q, --quieter         reduce output to status messages if printing to a terminal
-  -s, --silent          completely disable output if printing to a terminal
-  -v, --verbose         enable all terminal output (default)
-      --targets         print a list of available targets and exit
-  -t, --timestamping    enable timestamping\n"
+  -c, --cmdline          print relevant commands as they are processed
+      --no-cmdline       don't print relevant commands as they are processed (default)
+      --clean            remove all cached tarballs, builds, and logs
+  -C, --cleanup          clean up unpacked sources for the current build
+      --no-cleanup       don't clean up unpacked sources for the current build (default)
+      --help             print this message
+  -j, --jobs=JOBS        concurrent job/task count
+  -l, --log              log build information to ccbuild.log
+      --no-log           don't log build information to ccbuild.log (default)
+  -n, --name=NAME        name of the build (default: ccb-TARGET)
+  -q, --quieter          reduce output to status messages if printing to a terminal
+  -s, --silent           completely disable output if printing to a terminal
+  -v, --verbose          enable all terminal output (default)
+      --targets          print a list of available targets and exit (default)
+  -t, --timestamping     enable timestamping
+      --no-timestamping  don't enable timestamping (default)\n"
 }
 
 # ensure a provided command is installed
@@ -54,9 +58,9 @@ get_timestamp() {
         eval "${1:+$1_}ms=\"$(printf "$time" | awk -F. '{print $2}' | head -c3)\""
         eval "${1:+$1_}time=\"$time\""
     } || {
-        eval "${1:+$1_}sec=\"$(date +%s)\""
+        time="$(date +%s)"
+        eval "${1:+$1_}time=\"$time\""
     }
-
 }
 
 # get timestamp difference
@@ -68,7 +72,7 @@ diff_timestamp() {
     require_command bc awk head
 
     # pipe args into bc
-    ts_diff="$(printf "$1 - $2\n" | bc -ql)"
+    ts_diff="$(printf "$2 - $1\n" | bc -ql)"
     ts_diff="${ts_diff#-}"
 
     # get seconds
@@ -97,6 +101,9 @@ diff_timestamp() {
         secondsuffix=" seconds"
     }
 
+    # singular second prefix if miliseconds aren't counted
+    [ "$ts_diff_sec" -ne 1 >&- 2>&- ] || [ -n "$ts_diff_ms" ] || secondsuffix="${secondsuffix%s}"
+
     # if less than 1 second, use a short prefix
     [ "$ts_diff_sec" -lt 1 >&- 2>&- ] && {
         secondsuffix="s"
@@ -106,43 +113,43 @@ diff_timestamp() {
     while [ "$ts_diff_sec" -ge 31557600 ]; do
         ts_diff_sec="$((ts_diff_sec-31557600))"
         ts_diff_years="$((ts_diff_years+1))"
-        [ "$ts_diff_years" -ne 1 >&- 2>&- ] yearsuffix="${yearsuffix%s}"
     done
+    [ "$ts_diff_years" -ne 1 >&- 2>&- ] || yearsuffix="${yearsuffix%s}"
 
     # count the amount of months
     while [ "$ts_diff_sec" -ge 2628000 ]; do
         ts_diff_sec="$((ts_diff_sec-2628000))"
         ts_diff_months="$((ts_diff_months+1))"
-        [ "$ts_diff_months" -ne 1 >&- 2>&- ] monthsuffix="${monthsuffix%s}"
     done
+    [ "$ts_diff_months" -ne 1 >&- 2>&- ] || monthsuffix="${monthsuffix%s}"
 
     # count the amount of weeks
     while [ "$ts_diff_sec" -ge 604800 ]; do
         ts_diff_sec="$((ts_diff_sec-604800))"
         ts_diff_weeks="$((ts_diff_weeks+1))"
-        [ "$ts_diff_weeks" -ne 1 >&- 2>&- ] weeksuffix="${weeksuffix%s}"
     done
+    [ "$ts_diff_weeks" -ne 1 >&- 2>&- ] || weeksuffix="${weeksuffix%s}"
 
     # count the amount of days
     while [ "$ts_diff_sec" -ge 86400 ]; do
         ts_diff_sec="$((ts_diff_sec-86400))"
         ts_diff_days="$((ts_diff_days+1))"
-        [ "$ts_diff_days" -ne 1 >&- 2>&- ] daysuffix="${daysuffix%s}"
     done
+    [ "$ts_diff_days" -ne 1 >&- 2>&- ] || daysuffix="${daysuffix%s}"
 
     # count the amount of hours
     while [ "$ts_diff_sec" -ge 3600 ]; do
         ts_diff_sec="$((ts_diff_sec-3600))"
         ts_diff_hours="$((ts_diff_hours+1))"
-        [ "$ts_diff_hours" -ne 1 >&- 2>&- ] hoursuffix="${hoursuffix%s}"
     done
+    [ "$ts_diff_hours" -ne 1 >&- 2>&- ] || hoursuffix="${hoursuffix%s}"
 
     # count the amount of minutes
     while [ "$ts_diff_sec" -ge 60 ]; do
         ts_diff_sec="$((ts_diff_sec-60))"
         ts_diff_minutes="$((ts_diff_minutes+1))"
-        [ "$ts_diff_minutes" -ne 1 >&- 2>&- ] minutesuffix="${minutesuffix%s}"
     done
+    [ "$ts_diff_minutes" -ne 1 >&- 2>&- ] || minutesuffix="${minutesuffix%s}"
 
     # print the timestamp difference
     printf -- "${ts_diff_years:+$ts_diff_years$yearsuffix, }${ts_diff_months:+$ts_diff_months$monthsuffix, }${ts_diff_weeks:+$ts_diff_weeks$weeksuffix, }${ts_diff_days:+$ts_diff_days$daysuffix, }${ts_diff_hours:+$ts_diff_hours$hoursuffix, }${ts_diff_minutes:+$ts_diff_minutes$minutesuffix, }$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}$secondsuffix\n"
@@ -163,7 +170,7 @@ run() {
     esac
 
     # commands print what they normally do
-    [ "$verbosity" = "quieter" ] && {
+    [ "$verbosity" = "quieter" ] && [ -z "$buildlog" ] && {
         suf=""
         [ -n "$buildlog" ] || {
             case "${cmd##*/}" in
@@ -203,9 +210,8 @@ run() {
         } || {
             printf "COMMAND: $cmd $args\n" >>"$buildlog"
         }
-    } || {
-        [ "$printcmdline" = "y" ] && printf "\033[90m\$\033[0m\033[3m $cmd $args\033[0m\n" >&2
     }
+    [ "$printcmdline" = "y" ] && printf "\033[90m\$\033[0m\033[3m $cmd $args\033[0m\n" >&2
 
     # run the command and catch errors
     eval "$cmd $args${suf:+ $suf}" || {
