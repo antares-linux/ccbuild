@@ -196,4 +196,4 @@ run ln -sf . local
     get_timestamp end
 }
 
-printf "success: Successfully built for $FARCH/musl (${bdir##$CCBROOT/})${timestamping:+ in $(diff_timestamp "$start_time" "$end_time")}\n" >&2
+printf "success: Successfully built for $FARCH/musl (${bdir##$CCBROOT/})${end_time:+ in $(diff_timestamp "$start_time" "$end_time")}\n" >&2
