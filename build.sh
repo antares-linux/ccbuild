@@ -54,6 +54,9 @@ unitsize="l"
 while [ "$#" -gt 0 ]; do
     # case statement (lol useless comment but my OC wants one to be here)
     case "$1" in
+        # allow the root user to use ccbuild
+        --allow-root) allow_root="y"; shift ;;
+
         # clean CCBROOT
         --clean) full_clean="y"; shift ;;
 
@@ -111,17 +114,14 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-# timestamping setup
-[ "$timestamping" = "y" ] && {
-    # these commands are required for timestamping
-    require_command date bc
-
-    # check whether nanoseconds work
-    [ "$(date +%N | wc -c 2>/dev/null)" = "10" ] && has_ns="y"
-
-    # get the beginning
-    get_timestamp start
+# warn the user about running as root
+[ "$allow_root" = "y" ] || {
+    [ "${EUID:-${UID:-$(id -u)}}" -ne 0 >/dev/null 2>&1 ] || {
+        printf "${0##*/}: error: Running this script with root privileges is not recommended. Run \`$0 --allow-root\` to allow this.\n" >&2
+        exit 1
+    }
 }
+
 
 # clean up the script root if desired
 [ "$full_clean" = "y" ] && {
@@ -135,10 +135,10 @@ done
 } || {
     [ -n "$1" ] && {
         printf "${0##*/}: error: Invalid target $target\n" >&2
-        exit 2
+        exit 1
     } || {
         printf "${0##*/}: error: No target specified. Run \`$0 --help\` for more information.\n" >&2
-        exit 3
+        exit 1
     }
 }
 
@@ -160,6 +160,18 @@ done
 
 # print the starting status message
 [ "$verbosity" != "silent" ] && printf "Starting build for $FARCH/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
+
+# timestamping setup
+[ "$timestamping" = "y" ] && {
+    # these commands are required for timestamping
+    require_command date bc
+
+    # check whether nanoseconds work
+    [ "$(date +%N | wc -c 2>/dev/null)" = "10" ] && has_ns="y"
+
+    # get the beginning
+    get_timestamp start
+}
 
 # print a status message that the dir structure for the toolchain is being made
 [ "$verbosity" = "quieter" ] && [ "$printcmdline" != "y" ] && printf "Creating directory structure\n" >&2
@@ -188,7 +200,7 @@ done
 # symlink local to its parent
 run cd "$bdir/usr"
 run ln -sf . local
- 
+
 # ------------------------------------------------------------------------------
 
 # get the end timestamp

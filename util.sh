@@ -5,6 +5,7 @@ print_help() {
     printf "Usage: $0 [OPTIONS]... [TARGET]
 
 Options:
+      --allow-root       allow the script to be run with root privileges
   -c, --cmdline          print relevant commands as they are processed
       --no-cmdline       don't print relevant commands as they are processed (default)
       --clean            remove all cached tarballs, builds, and logs
@@ -215,8 +216,9 @@ run() {
 
     # run the command and catch errors
     eval "$cmd $args${suf:+ $suf}" || {
+        ec="$?"
         printf "${0##*/}: error: failed at \`$cmd $args\`\n" >&2
-        exit 4
+        exit "$ec"
     }
 
     # initialize these
