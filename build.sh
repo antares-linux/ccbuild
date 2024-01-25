@@ -34,6 +34,16 @@ export CCBROOT="$PWD"
 # load utility functions (these are separated for cleanliness)
 . "$CCBROOT/util.sh"
 
+# define packages
+def_pkg mpc "1.3.1" "http://ftpmirror.gnu.org/mpc/mpc-#:ver:#.tar.gz" "shasum"
+def_pkg musl "1.2.4" "http://musl.libc.org/releases/musl-#:ver:#.tar.gz" "shasum"
+def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-#:ver:#.tar.xz" "shasum"
+def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-#:ver:#.tar.xz" "shasum"
+def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "shasum"
+def_pkg pkgconf "2.0.3" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "shasum"
+def_pkg binutils "2.41" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "shasum"
+def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "shasum"
+
 # environment variables
 export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 export CXXFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -48,6 +58,12 @@ verbosity="normal"
 # whether to use [l]ong or [s]hort suffixes for time units
 unitsize="l"
 
+# whether to verify checksums
+verify_hash="y"
+
+# whether to download and build pkgconf
+#use_pkgconf="y"
+
 # ------------------------------------------------------------------------------
 
 # parse command-line arguments
@@ -56,6 +72,9 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         # allow the root user to use ccbuild
         --allow-root) allow_root="y"; shift ;;
+
+        # disable sha256 hash checking
+        --no-checksum) unset verify_hash; shift ;;
 
         # clean CCBROOT
         --clean) full_clean="y"; shift ;;
@@ -71,12 +90,6 @@ while [ "$#" -gt 0 ]; do
 
         # don't print the command line to stdout (default)
         --no-cmdline) unset printcmdline; shift ;;
-
-        # timestamp the build process
-        -t|--timestamping) timestamping="y"; shift ;;
-
-        # don't timestamp the build process (default)
-        --no-timestamping) unset timestamping; shift ;;
 
         # print help
         --help) print_help; exit ;;
@@ -97,20 +110,30 @@ while [ "$#" -gt 0 ]; do
         -n*)       export bname="${1##-n}";      shift ;;
         --name=*)  export bname="${1##--name=}"; shift ;;
 
+        # whether to download and use pkgconf
+        -p|--pkgconf) use_pkgconf="y"; shift ;;
+        --no-pkgconf) unset use_pkgconf; shift ;;
+
         # quieter, terse output (status msgs)
         -q|--quieter) verbosity="quieter"; shift ;;
 
         # completely silent
         -s|--silent) verbosity="silent"; shift ;;
 
-        # verbose (default) output
-        -v|--verbose) verbosity="normal"; shift ;;
-
         # print a list of the available architectures and exit
         --targets) list_targets; exit ;;
 
+        # timestamp the build process
+        -t|--timestamping) timestamping="y"; shift ;;
+
+        # don't timestamp the build process (default)
+        --no-timestamping) unset timestamping; shift ;;
+
+        # verbose (default) output
+        -v|--verbose) verbosity="normal"; shift ;;
+
         # set the target name
-        *) target="${1%%/}"; shift ;;
+        *) [ -z "$target" ] && target="${1%%/}"; shift ;;
     esac
 done
 
@@ -133,8 +156,8 @@ done
 [ -r "$CCBROOT/arch/$target.conf" ] && {
     . "$CCBROOT/arch/$target.conf"
 } || {
-    [ -n "$1" ] && {
-        printf "${0##*/}: error: Invalid target $target\n" >&2
+    [ -n "$target" ] && {
+        printf "${0##*/}: error: Invalid option or target $target\n" >&2
         exit 1
     } || {
         printf "${0##*/}: error: No target specified. Run \`$0 --help\` for more information.\n" >&2
@@ -173,8 +196,24 @@ done
     get_timestamp start
 }
 
+# create the build dir
+run mkdir -p "$CCBROOT/cache"
+
+# cd to the build directory
+run cd "$CCBROOT/cache"
+
+# download packages
+[ "$use_pkgconf" = "y" ] && get_pkg pkgconf
+get_pkg mpc
+get_pkg musl
+get_pkg mpfr
+get_pkg isl
+get_pkg gmp
+get_pkg binutils
+get_pkg gcc
+
 # print a status message that the dir structure for the toolchain is being made
-[ "$verbosity" = "quieter" ] && [ "$printcmdline" != "y" ] && printf "Creating directory structure\n" >&2
+printstatus "Creating directory structure"
 
 # create the build dir
 run mkdir -p "$bdir"
@@ -208,4 +247,4 @@ run ln -sf . local
     get_timestamp end
 }
 
-printf "success: Successfully built for $FARCH/musl (${bdir##$CCBROOT/})${end_time:+ in $(diff_timestamp "$start_time" "$end_time")}\n" >&2
+printf "success: Successfully built for $FARCH/musl (${bdir##$CCBROOT/})${end_time:+ in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))} ${download_time:+($(fmt_timestamp "$download_time") spent downloading)}\n" >&2

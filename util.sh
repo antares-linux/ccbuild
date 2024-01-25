@@ -6,22 +6,25 @@ print_help() {
 
 Options:
       --allow-root       allow the script to be run with root privileges
-  -c, --cmdline          print relevant commands as they are processed
-      --no-cmdline       don't print relevant commands as they are processed (default)
+      --no-checksum      don't verify SHA256 checksums of downloaded packages
       --clean            remove all cached tarballs, builds, and logs
   -C, --cleanup          clean up unpacked sources for the current build
       --no-cleanup       don't clean up unpacked sources for the current build (default)
+  -c, --cmdline          print relevant commands as they are processed
+      --no-cmdline       don't print relevant commands as they are processed (default)
       --help             print this message
   -j, --jobs=JOBS        concurrent job/task count
   -l, --log              log build information to ccbuild.log
       --no-log           don't log build information to ccbuild.log (default)
   -n, --name=NAME        name of the build (default: ccb-TARGET)
+  -p, --pkgconfig        fetch and build pkgconf configured for the toolchain (default)
+      --no-pkgconfig     don't fetch and build pkgconf
   -q, --quieter          reduce output to status messages if printing to a terminal
   -s, --silent           completely disable output if printing to a terminal
-  -v, --verbose          enable all terminal output (default)
       --targets          print a list of available targets and exit (default)
   -t, --timestamping     enable timestamping
-      --no-timestamping  don't enable timestamping (default)\n"
+      --no-timestamping  don't enable timestamping (default)
+  -v, --verbose          enable all terminal output (default)\n"
 }
 
 # ensure a provided command is installed
@@ -36,6 +39,14 @@ require_command() {
     }
 }
 
+# print status messages
+printstatus() {
+    [ "$printcmdline" != "y" ] && {
+        [ "$verbosity" = "normal" ] && [ -n "$buildlog" ] && printf "%s\n" "$1" >&2
+        [ "$verbosity" = "quieter" ] && printf "%s\n" "$1" >&2
+    }
+}
+
 # print a list of the non-symbolic files in ./arch/ (kinda useful)
 list_targets() {
     for i in "$CCBROOT"/arch/*.conf; do
@@ -45,6 +56,115 @@ list_targets() {
         }
     done
     printf "$arches\n"
+}
+
+# set variabless containing info about a package
+# name, version, link, dirname, checksum
+def_pkg() {
+    # initialize these
+    unset name version link dirname checksum
+
+    # require these commands
+    require_command sed
+
+    # set the package name
+    [ -n "$1" ] && {
+        name="$1"
+        eval "pkg_${name}_name=\"$name\""
+    } || {
+        printf "${0##*/}: error: def_pkg: No package name specified\n" >&2
+        exit 1
+    }
+
+    # set the version
+    [ -n "$2" ] && {
+        version="$2"
+        eval "pkg_${name}_version=\"$version\""
+    }
+
+    # set the package link
+    [ -n "$3" ] && {
+        link="$(printf "$3" | sed -e "s/#:ver:#/$version/g")"
+        eval "pkg_${name}_link=\"$link\""
+        eval "pkg_${name}_archive=\"${link##*/}\""
+    } || {
+        printf "${0##*/}: error: def_pkg: No package link specified\n" >&2
+        exit 1
+    }
+
+    # set the package checksum
+    [ -n "$4" ] && {
+        checksum="$4"
+        eval "pkg_${name}_checksum=\"$checksum\""
+    }
+
+    # set the package dirname, if the default should be overridden
+    [ -n "$5" ] && {
+        dirname="$(printf "$5" | sed -e "s/#:ver:#/$version/g")"
+    } || {
+        dirname="$name-$version"
+    }
+    eval "pkg_${name}_dirname=\"$dirname\""
+}
+
+# download a package
+get_pkg() {
+    # initialize these
+    unset gcmd link dl_start_time dl_start_sec dl_start_ms dl_end_time dl_end_sec dl_end_ms dl_time
+
+    # read package info
+    [ -n "$1" ] && {
+        eval "[ -n \"\$pkg_${1}_link\" ]" && {
+            eval "link=\"\$pkg_${1}_link\""
+        } || {
+            printf "${0##*/}: error: get_pkg: Package $1 lacks associated link\n" >&2
+            exit 1
+        }
+    } || {
+        printf "${0##*/}: error: get_pkg: No package name specified\n" >&2
+        exit 1
+    }
+
+    # exit if the package is downloaded
+    [ -r "${link##*/}" ] && return 0
+
+    # decide which download command to use
+    for i in lynx w3m aria2c curl wget; do
+        command -v "$i" >/dev/null 2>&1 && gcmd="$i"
+    done
+
+    # print a status message
+    eval "printstatus \"Downloading \${pkg_${1}_link##*/}\""
+
+    # get the time before a download starts
+    [ "$timestamping" = "y" ] && {
+        get_timestamp dl_start
+    }
+
+    # download the tarball with lynx
+    #[ "$gcmd" = "lynx" ] && run lynx
+
+    # download the tarball with w3m
+    #[ "$gcmd" = "w3m" ] && run w3m
+
+    # download the tarball with aria2c
+    [ "$gcmd" = "aria2c" ] && run aria2c -s "$JOBS" -j "$JOBS" -o "${link##*/}" "$link"
+
+    # download the tarball with curl
+    [ "$gcmd" = "curl" ] && run curl -fL# -o "${link##*/}" "$link"
+
+    # download the tarball with wget
+    [ "$gcmd" = "wget" ] && run wget -O "${link##*/}" "$link"
+
+    # get the time before a download starts
+    [ "$timestamping" = "y" ] && {
+        # get the time at the end of the download and the time it took
+        get_timestamp dl_end
+        dl_time="$(diff_timestamp "$dl_start_time" "$dl_end_time")"
+
+        # add to the total amount of time spent downloading
+        download_time="$(printf "${download_time:+$download_time + }$dl_time\n" | bc -ql)"
+    }
 }
 
 # get a timestamp
@@ -64,10 +184,10 @@ get_timestamp() {
     }
 }
 
-# get timestamp difference
+# get the difference between two timestamps
 diff_timestamp() {
     # initialize these
-    unset ts_diff ts_diff_years ts_diff_months ts_diff_weeks ts_diff_days ts_diff_hours ts_diff_mins ts_diff_sec ts_diff_ms
+    unset ts_diff ts_diff_sec ts_diff_ms
 
     # required cmds
     require_command bc awk head
@@ -75,13 +195,28 @@ diff_timestamp() {
     # pipe args into bc
     ts_diff="$(printf "$2 - $1\n" | bc -ql)"
     ts_diff="${ts_diff#-}"
+    #ts_diff="$(printf "$ts_diff + 100000000\n" | bc -ql)"
 
     # get seconds
     ts_diff_sec="$(printf "$ts_diff" | awk -F. '{print $1}')"
     ts_diff_sec="${ts_diff_sec:-0}"
 
     # get ms if possible
-    ts_diff_ms="$(printf "$ts_diff" | awk -F. '{print $2}' | head -c3)"
+    ts_diff_ms="$(printf "${ts_diff##$ts_diff_sec}" | awk -F. '{print $2}' | head -c3)"
+
+    # print the time difference
+    printf "$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}"
+}
+
+# format a timestamp string
+fmt_timestamp() {
+    # initialize these
+    unset time seconds miliseconds years months weeks days hours minutes
+
+    # store time
+    time="${1:-0}"
+    seconds="$(printf "$time" | awk -F. '{print $1}')"
+    miliseconds="$(printf "${time##$seconds}" | awk -F. '{print $2}' | head -c3)"
 
     # format suffixes
     [ "$unitsize" = "s" ] && {
@@ -102,59 +237,60 @@ diff_timestamp() {
         secondsuffix=" seconds"
     }
 
+    # count the amount of years (lol)
+    while [ "$seconds" -ge 31557600 ]; do
+        seconds="$((seconds-31557600))"
+        years="$((years+1))"
+    done
+    [ "$years" -ne 1 >&- 2>&- ] || yearsuffix="${yearsuffix%s}"
+
+    # count the amount of months
+    while [ "$seconds" -ge 2628000 ]; do
+        seconds="$((seconds-2628000))"
+        months="$((months+1))"
+    done
+    [ "$months" -ne 1 >&- 2>&- ] || monthsuffix="${monthsuffix%s}"
+
+    # count the amount of weeks
+    while [ "$seconds" -ge 604800 ]; do
+        seconds="$((seconds-604800))"
+        weeks="$((weeks+1))"
+    done
+    [ "$weeks" -ne 1 >&- 2>&- ] || weeksuffix="${weeksuffix%s}"
+
+    # count the amount of days
+    while [ "$seconds" -ge 86400 ]; do
+        seconds="$((seconds-86400))"
+        days="$((days+1))"
+    done
+    [ "$days" -ne 1 >&- 2>&- ] || daysuffix="${daysuffix%s}"
+
+    # count the amount of hours
+    while [ "$seconds" -ge 3600 ]; do
+        seconds="$((seconds-3600))"
+        hours="$((hours+1))"
+    done
+    [ "$hours" -ne 1 >&- 2>&- ] || hoursuffix="${hoursuffix%s}"
+
+    # count the amount of minutes
+    while [ "$seconds" -ge 60 ]; do
+        seconds="$((seconds-60))"
+        minutes="$((minutes+1))"
+    done
+    [ "$minutes" -ne 1 >&- 2>&- ] || minutesuffix="${minutesuffix%s}"
+
     # singular second prefix if miliseconds aren't counted
-    [ "$ts_diff_sec" -ne 1 >&- 2>&- ] || [ -n "$ts_diff_ms" ] || secondsuffix="${secondsuffix%s}"
+    [ "$seconds" -ne 1 >&- 2>&- ] || [ -n "$miliseconds" ] || [ "$secondprefix" = "s" ] || secondsuffix="${secondsuffix%s}"
 
     # if less than 1 second, use a short prefix
-    [ "$ts_diff_sec" -lt 1 >&- 2>&- ] && {
+    [ "$seconds" -lt 1 >&- 2>&- ] && {
         secondsuffix="s"
     }
 
-    # count the amount of years (lol)
-    while [ "$ts_diff_sec" -ge 31557600 ]; do
-        ts_diff_sec="$((ts_diff_sec-31557600))"
-        ts_diff_years="$((ts_diff_years+1))"
-    done
-    [ "$ts_diff_years" -ne 1 >&- 2>&- ] || yearsuffix="${yearsuffix%s}"
-
-    # count the amount of months
-    while [ "$ts_diff_sec" -ge 2628000 ]; do
-        ts_diff_sec="$((ts_diff_sec-2628000))"
-        ts_diff_months="$((ts_diff_months+1))"
-    done
-    [ "$ts_diff_months" -ne 1 >&- 2>&- ] || monthsuffix="${monthsuffix%s}"
-
-    # count the amount of weeks
-    while [ "$ts_diff_sec" -ge 604800 ]; do
-        ts_diff_sec="$((ts_diff_sec-604800))"
-        ts_diff_weeks="$((ts_diff_weeks+1))"
-    done
-    [ "$ts_diff_weeks" -ne 1 >&- 2>&- ] || weeksuffix="${weeksuffix%s}"
-
-    # count the amount of days
-    while [ "$ts_diff_sec" -ge 86400 ]; do
-        ts_diff_sec="$((ts_diff_sec-86400))"
-        ts_diff_days="$((ts_diff_days+1))"
-    done
-    [ "$ts_diff_days" -ne 1 >&- 2>&- ] || daysuffix="${daysuffix%s}"
-
-    # count the amount of hours
-    while [ "$ts_diff_sec" -ge 3600 ]; do
-        ts_diff_sec="$((ts_diff_sec-3600))"
-        ts_diff_hours="$((ts_diff_hours+1))"
-    done
-    [ "$ts_diff_hours" -ne 1 >&- 2>&- ] || hoursuffix="${hoursuffix%s}"
-
-    # count the amount of minutes
-    while [ "$ts_diff_sec" -ge 60 ]; do
-        ts_diff_sec="$((ts_diff_sec-60))"
-        ts_diff_minutes="$((ts_diff_minutes+1))"
-    done
-    [ "$ts_diff_minutes" -ne 1 >&- 2>&- ] || minutesuffix="${minutesuffix%s}"
-
     # print the timestamp difference
-    printf -- "${ts_diff_years:+$ts_diff_years$yearsuffix, }${ts_diff_months:+$ts_diff_months$monthsuffix, }${ts_diff_weeks:+$ts_diff_weeks$weeksuffix, }${ts_diff_days:+$ts_diff_days$daysuffix, }${ts_diff_hours:+$ts_diff_hours$hoursuffix, }${ts_diff_minutes:+$ts_diff_minutes$minutesuffix, }$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}$secondsuffix\n"
+    printf -- "${years:+$years$yearsuffix, }${months:+$months$monthsuffix, }${weeks:+$weeks$weeksuffix, }${days:+$days$daysuffix, }${hours:+$hours$hoursuffix, }${minutes:+$minutes$minutesuffix, }$seconds${miliseconds:+.$miliseconds}$secondsuffix\n"
 }
+
 
 # wrapper function for running commands (for verbosity/logging/etc)
 run() {
@@ -166,18 +302,16 @@ run() {
 
     # decide what flags to append to commands
     case "${cmd##*/}" in
-        mkdir|cp|ln|rm) suf="-v" ;;
-                    cd) printcd="y" ;;
+        mkdir|cp|ln|rm|curl) suf="-v" ;;
+        cd|pushd|popd) printcd="y" ;;
     esac
 
     # commands print what they normally do
     [ "$verbosity" = "quieter" ] && [ -z "$buildlog" ] && {
         suf=""
-        [ -n "$buildlog" ] || {
-            case "${cmd##*/}" in
-                make|configure) suf=">/dev/null" ;;
-            esac
-        }
+        case "${cmd##*/}" in
+            make|configure|wget|aria2c) suf=">/dev/null" ;;
+        esac
     }
 
     # output handling
@@ -189,9 +323,7 @@ run() {
 
     # no-verbosity output handling
     [ "$verbosity" = "silent" ] && {
-        [ -n "$buildlog" ] && {
-            suf="${suf:+$suf }>>'$buildlog' 2>&1"
-        } || {
+        [ -n "$buildlog" ] || {
             suf=">/dev/null 2>&1"
         }
     }
