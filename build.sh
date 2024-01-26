@@ -34,16 +34,6 @@ export CCBROOT="$PWD"
 # load utility functions (these are separated for cleanliness)
 . "$CCBROOT/util.sh"
 
-# define packages
-def_pkg mpc "1.3.1" "http://ftpmirror.gnu.org/mpc/mpc-#:ver:#.tar.gz" "shasum"
-def_pkg musl "1.2.4" "http://musl.libc.org/releases/musl-#:ver:#.tar.gz" "shasum"
-def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-#:ver:#.tar.xz" "shasum"
-def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-#:ver:#.tar.xz" "shasum"
-def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "shasum"
-def_pkg pkgconf "2.0.3" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "shasum"
-def_pkg binutils "2.41" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "shasum"
-def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "shasum"
-
 # environment variables
 export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 export CXXFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -74,7 +64,7 @@ while [ "$#" -gt 0 ]; do
         --allow-root) allow_root="y"; shift ;;
 
         # disable sha256 hash checking
-        --no-checksum) unset verify_hash; shift ;;
+        --no-checkhash) unset verify_hash; shift ;;
 
         # clean CCBROOT
         --clean) full_clean="y"; shift ;;
@@ -145,7 +135,6 @@ done
     }
 }
 
-
 # clean up the script root if desired
 [ "$full_clean" = "y" ] && {
     run rm -rf "$CCBROOT/build" "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"
@@ -165,15 +154,25 @@ done
     }
 }
 
+# define packages; has to be done after target is chosen to detect CPU-specific patch directories
+def_pkg mpc "1.3.1" "http://ftpmirror.gnu.org/mpc/mpc-#:ver:#.tar.gz" "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8"
+def_pkg musl "1.2.4" "http://musl.libc.org/releases/musl-#:ver:#.tar.gz" "7a35eae33d5372a7c0da1188de798726f68825513b7ae3ebe97aaaa52114f039"
+def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-#:ver:#.tar.xz" "277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2"
+def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-#:ver:#.tar.xz" "a0b5cb06d24f9fa9e77b55fabbe9a3c94a336190345c2555f9915bb38e976504"
+def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
+def_pkg pkgconf "2.0.3" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "cabdf3c474529854f7ccce8573c5ac68ad34a7e621037535cbc3981f6b23836c"
+def_pkg binutils "2.41" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450"
+def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
+
 # set the build directory for a new toolchain
-[ -d "$CCBROOT/out/${bname:-ccb-$FARCH}" ] && {
+[ -d "$CCBROOT/out/${bname:-ccb-$CPU_NAME}" ] && {
     i="2"
-    while [ -d "$CCBROOT/out/${bname:-ccb-$FARCH}.$i" ]; do
+    while [ -d "$CCBROOT/out/${bname:-ccb-$CPU_NAME}.$i" ]; do
         i="$((i+1))"
     done
-    export bdir="$CCBROOT/out/${bname:-ccb-$FARCH}.$i"
+    export bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}.$i"
 } || {
-    export bdir="$CCBROOT/out/${bname:-ccb-$FARCH}"
+    export bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}"
 }
 
 # decide whether to say job or jobs
@@ -182,7 +181,7 @@ done
 # ------------------------------------------------------------------------------
 
 # print the starting status message
-[ "$verbosity" != "silent" ] && printf "Starting build for $FARCH/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
+[ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
 
 # timestamping setup
 [ "$timestamping" = "y" ] && {
@@ -240,6 +239,19 @@ done
 run cd "$bdir/usr"
 run ln -sf . local
 
+# cd to the source dir
+run cd "$bdir/usr/src"
+
+# unpack and patch packages
+[ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
+prep_pkg mpc
+prep_pkg musl
+prep_pkg mpfr
+prep_pkg isl
+prep_pkg gmp
+prep_pkg binutils
+prep_pkg gcc
+
 # ------------------------------------------------------------------------------
 
 # get the end timestamp
@@ -247,4 +259,4 @@ run ln -sf . local
     get_timestamp end
 }
 
-printf "success: Successfully built for $FARCH/musl (${bdir##$CCBROOT/})${end_time:+ in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))} ${download_time:+($(fmt_timestamp "$download_time") spent downloading)}\n" >&2
+printf "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})${end_time:+ in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))} ${download_time:+($(fmt_timestamp "$download_time") spent downloading)}\n" >&2

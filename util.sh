@@ -6,7 +6,7 @@ print_help() {
 
 Options:
       --allow-root       allow the script to be run with root privileges
-      --no-checksum      don't verify SHA256 checksums of downloaded packages
+      --no-checkhash     don't verify hashes of downloaded packages
       --clean            remove all cached tarballs, builds, and logs
   -C, --cleanup          clean up unpacked sources for the current build
       --no-cleanup       don't clean up unpacked sources for the current build (default)
@@ -62,7 +62,7 @@ list_targets() {
 # name, version, link, dirname, checksum
 def_pkg() {
     # initialize these
-    unset name version link dirname checksum
+    unset name version link dirname checksum patchdirs
 
     # require these commands
     require_command sed
@@ -105,17 +105,25 @@ def_pkg() {
         dirname="$name-$version"
     }
     eval "pkg_${name}_dirname=\"$dirname\""
+
+    # set the directories to check for patches
+    for i in "$CCBROOT/patches/$name" "$CCBROOT/patches/$name/$version" "$CCBROOT/patches/$name-$version"; do
+        [ -d "$i" ] && patchdirs="${patchdirs:+$patchdirs }$i"
+        [ -d "$i/$CPU_NAME" ] && patchdirs="${patchdirs:+$patchdirs }$i/$CPU_NAME"
+    done
+    eval "pkg_${name}_patchdirs=\"$patchdirs\""
 }
 
 # download a package
 get_pkg() {
     # initialize these
-    unset gcmd link dl_start_time dl_start_sec dl_start_ms dl_end_time dl_end_sec dl_end_ms dl_time
+    unset gcmd link checksum dl_start_time dl_start_sec dl_start_ms dl_end_time dl_end_sec dl_end_ms dl_time
 
     # read package info
     [ -n "$1" ] && {
         eval "[ -n \"\$pkg_${1}_link\" ]" && {
             eval "link=\"\$pkg_${1}_link\""
+            eval "checksum=\"\$pkg_${1}_checksum\""
         } || {
             printf "${0##*/}: error: get_pkg: Package $1 lacks associated link\n" >&2
             exit 1
@@ -129,7 +137,7 @@ get_pkg() {
     [ -r "${link##*/}" ] && return 0
 
     # decide which download command to use
-    for i in lynx w3m aria2c curl wget; do
+    for i in lynx w3m rsync aria2c curl wget; do
         command -v "$i" >/dev/null 2>&1 && gcmd="$i"
     done
 
@@ -146,6 +154,9 @@ get_pkg() {
 
     # download the tarball with w3m
     #[ "$gcmd" = "w3m" ] && run w3m
+
+    # download the tarball with rsync
+    #[ "$gcmd" = "rsync" ] && run rsync
 
     # download the tarball with aria2c
     [ "$gcmd" = "aria2c" ] && run aria2c -s "$JOBS" -j "$JOBS" -o "${link##*/}" "$link"
@@ -164,7 +175,56 @@ get_pkg() {
 
         # add to the total amount of time spent downloading
         download_time="$(printf "${download_time:+$download_time + }$dl_time\n" | bc -ql)"
+        [ -z "$(printf "$download_time" | awk -F. '{print $1}')" ] && download_time="0$download_time"
     }
+
+    # verify the hash of the tarball
+    [ "$verify_hash" = "y" ] && {
+        run check_hash "${link##*/}" "$checksum" #|| {
+#            printf "${0##*/}: error: ${link##*/}: hash mismatch or compute failure\n" >&2
+#            exit 1
+#        }
+    }
+}
+
+# compute md5/sha1/sha224/sha256/sha384/sha512 hashes and check if they match the hash provided
+check_hash() {
+    # require awk
+    require_command awk
+
+    # check if the specified file exists
+    [ -r "$1" ] || {
+        printf "${0##*/}: error: $1: No such file or directory\n" >&2
+        exit 1
+    }
+
+    # print a status message
+    printstatus "Verifying hash for $1"
+
+    # guess the type of hash based on its length
+    case "$(printf "$2" | wc -c)" in
+           0) return 0 ;;
+
+          32) test "$(md5sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+
+          40) test "$(sha1sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+
+          56) test "$(sha224sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+
+          64) test "$(sha256sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+
+          96) test "$(sha384sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+
+         128) test "$(sha512sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+
+           *) return 1;
+     esac
 }
 
 # get a timestamp
@@ -292,7 +352,8 @@ fmt_timestamp() {
 }
 
 
-# wrapper function for running commands (for verbosity/logging/etc)
+# wrapper function for running important commands (for verbosity/logging/etc)
+# slows down the script marginally, but I think it's useful enough to be worth it
 run() {
     # initialize these
     unset cmd argc argv args suf printcd
