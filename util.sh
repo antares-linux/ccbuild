@@ -180,12 +180,68 @@ get_pkg() {
 
     # verify the hash of the tarball
     [ "$verify_hash" = "y" ] && {
-        run check_hash "${link##*/}" "$checksum" #|| {
-#            printf "${0##*/}: error: ${link##*/}: hash mismatch or compute failure\n" >&2
-#            exit 1
-#        }
+        run check_hash "${link##*/}" "$checksum"
     }
 }
+
+# prepare and patch a package for building
+prep_pkg() {
+    # initialize these
+    unset name version link checksum dirname patchdirs
+
+    # read package info
+    [ -n "$1" ] && {
+        eval "[ -n \"\$pkg_${1}_name\" ]" && {
+            eval "name=\"\$pkg_${1}_name\""
+            eval "version=\"\$pkg_${1}_version\""
+            eval "link=\"\$pkg_${1}_link\""
+            eval "checksum=\"\$pkg_${1}_checksum\""
+            eval "dirname=\"\$pkg_${1}_dirname\""
+            eval "patchdirs=\"\$pkg_${1}_patchdirs\""
+        } || {
+            printf "${0##*/}: error: prep_pkg: Package $1 has not been defined\n" >&2
+            exit 1
+        }
+    } || {
+        printf "${0##*/}: error: prep_pkg: No package name specified\n" >&2
+        exit 1
+    }
+
+    # check if the package is downloaded
+    [ -r "$CCBROOT/cache/${link##*/}" ] || {
+        printf "${0##*/}: error: prep_pkg: Package not downloaded\n" >&2
+        exit 1
+    }
+
+    # print a status message
+    printstatus "Unpacking ${link##*/}"
+
+    # unpack the tarball
+    run tar -xpf "$CCBROOT/cache/${link##*/}"
+
+    # check if the dir exists
+    run test -d "$dirname"
+
+    # cd to the dir
+    cd "$dirname"
+
+    # check if there are patches for this package
+    [ -n "$patchdirs" ] && {
+        printstatus "Patching $name-$version"
+
+        for i in $patchdirs; do
+            [ -d "$i" ] && {
+                for j in $i/*.patch $i/*.diff; do
+                    [ -r "$j" ] && run patch -p0 -i "$j"
+                done
+            }
+        done
+    }
+
+    # cd to the parent directory
+    cd ..
+}
+
 
 # compute md5/sha1/sha224/sha256/sha384/sha512 hashes and check if they match the hash provided
 check_hash() {
@@ -356,7 +412,7 @@ fmt_timestamp() {
 # slows down the script marginally, but I think it's useful enough to be worth it
 run() {
     # initialize these
-    unset cmd argc argv args suf printcd
+    unset cmd argc argv args suf printcd ec
 
     # store the command name
     require_command "$1" && cmd="$1" && shift
@@ -371,7 +427,7 @@ run() {
     [ "$verbosity" = "quieter" ] && [ -z "$buildlog" ] && {
         suf=""
         case "${cmd##*/}" in
-            make|configure|wget|aria2c) suf=">/dev/null" ;;
+            make|configure|wget|aria2c|patch) suf=">/dev/null" ;;
         esac
     }
 
@@ -408,8 +464,11 @@ run() {
     [ "$printcmdline" = "y" ] && printf "\033[90m\$\033[0m\033[3m $cmd $args\033[0m\n" >&2
 
     # run the command and catch errors
-    eval "$cmd $args${suf:+ $suf}" || {
-        ec="$?"
+    eval "$cmd $args${suf:+ $suf}"
+    ec="$?"
+
+    # print an error msg and quit
+    [ "$ec" -gt 0 ] && {
         printf "${0##*/}: error: failed at \`$cmd $args\`\n" >&2
         exit "$ec"
     }
