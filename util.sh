@@ -58,12 +58,33 @@ list_targets() {
     printf "$arches\n"
 }
 
+# read package vars
+read_pkg() {
+    # initialize these
+    unset name version link dirname checksum patchpaths
+
+    # read package info
+    [ -n "$1" ] && {
+        eval "[ -n \"\$pkg_${1}_name\" ]" && {
+            eval "name=\"\$pkg_${1}_name\""
+            eval "version=\"\$pkg_${1}_version\""
+            eval "link=\"\$pkg_${1}_link\""
+            eval "checksum=\"\$pkg_${1}_checksum\""
+            eval "dirname=\"\$pkg_${1}_dirname\""
+            eval "patchpaths=\"\$pkg_${1}_patchpaths\""
+        } || {
+            printf "${0##*/}: error: read_pkg: Package $1 has not been defined\n" >&2
+            exit 1
+        }
+    } || {
+        printf "${0##*/}: error: read_pkg: No package name specified\n" >&2
+        exit 1
+    }
+}
+
 # set variabless containing info about a package
 # name, version, link, dirname, checksum
 def_pkg() {
-    # initialize these
-    unset name version link dirname checksum patchdirs
-
     # require these commands
     require_command sed
 
@@ -108,30 +129,19 @@ def_pkg() {
 
     # set the directories to check for patches
     for i in "$CCBROOT/patches/$name" "$CCBROOT/patches/$name/$version" "$CCBROOT/patches/$name-$version"; do
-        [ -d "$i" ] && patchdirs="${patchdirs:+$patchdirs }$i"
-        [ -d "$i/$CPU_NAME" ] && patchdirs="${patchdirs:+$patchdirs }$i/$CPU_NAME"
+        [ -d "$i" ] && patchpaths="${patchpaths:+$patchpaths }$i"
+        [ -d "$i/$CPU_NAME" ] && patchpaths="${patchpaths:+$patchpaths }$i/$CPU_NAME"
     done
-    eval "pkg_${name}_patchdirs=\"$patchdirs\""
+    eval "pkg_${name}_patchpaths=\"$patchpaths\""
 }
 
 # download a package
 get_pkg() {
     # initialize these
-    unset gcmd link checksum dl_start_time dl_start_sec dl_start_ms dl_end_time dl_end_sec dl_end_ms dl_time
+    unset gcmd dl_start_time dl_start_sec dl_start_ms dl_end_time dl_end_sec dl_end_ms dl_time
 
     # read package info
-    [ -n "$1" ] && {
-        eval "[ -n \"\$pkg_${1}_link\" ]" && {
-            eval "link=\"\$pkg_${1}_link\""
-            eval "checksum=\"\$pkg_${1}_checksum\""
-        } || {
-            printf "${0##*/}: error: get_pkg: Package $1 lacks associated link\n" >&2
-            exit 1
-        }
-    } || {
-        printf "${0##*/}: error: get_pkg: No package name specified\n" >&2
-        exit 1
-    }
+    read_pkg "$1"
 
     # exit if the package is downloaded
     [ -r "${link##*/}" ] && return 0
@@ -186,26 +196,8 @@ get_pkg() {
 
 # prepare and patch a package for building
 prep_pkg() {
-    # initialize these
-    unset name version link checksum dirname patchdirs
-
     # read package info
-    [ -n "$1" ] && {
-        eval "[ -n \"\$pkg_${1}_name\" ]" && {
-            eval "name=\"\$pkg_${1}_name\""
-            eval "version=\"\$pkg_${1}_version\""
-            eval "link=\"\$pkg_${1}_link\""
-            eval "checksum=\"\$pkg_${1}_checksum\""
-            eval "dirname=\"\$pkg_${1}_dirname\""
-            eval "patchdirs=\"\$pkg_${1}_patchdirs\""
-        } || {
-            printf "${0##*/}: error: prep_pkg: Package $1 has not been defined\n" >&2
-            exit 1
-        }
-    } || {
-        printf "${0##*/}: error: prep_pkg: No package name specified\n" >&2
-        exit 1
-    }
+    read_pkg "$1"
 
     # check if the package is downloaded
     [ -r "$CCBROOT/cache/${link##*/}" ] || {
@@ -226,10 +218,9 @@ prep_pkg() {
     cd "$dirname"
 
     # check if there are patches for this package
-    [ -n "$patchdirs" ] && {
+    [ -n "$patchpaths" ] && {
         printstatus "Patching $name-$version"
-
-        for i in $patchdirs; do
+        for i in $patchpaths; do
             [ -d "$i" ] && {
                 for j in $i/*.patch $i/*.diff; do
                     [ -r "$j" ] && run patch -p0 -i "$j"
@@ -241,7 +232,6 @@ prep_pkg() {
     # cd to the parent directory
     cd ..
 }
-
 
 # compute md5/sha1/sha224/sha256/sha384/sha512 hashes and check if they match the hash provided
 check_hash() {
