@@ -34,6 +34,16 @@ export CCBROOT="$PWD"
 # load utility functions (these are separated for cleanliness)
 . "$CCBROOT/util.sh"
 
+# define packages
+def_pkg mpc "1.3.1" "http://ftpmirror.gnu.org/mpc/mpc-#:ver:#.tar.gz" "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8"
+def_pkg musl "1.2.4" "http://musl.libc.org/releases/musl-#:ver:#.tar.gz" "7a35eae33d5372a7c0da1188de798726f68825513b7ae3ebe97aaaa52114f039"
+def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-#:ver:#.tar.xz" "277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2"
+def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-#:ver:#.tar.xz" "a0b5cb06d24f9fa9e77b55fabbe9a3c94a336190345c2555f9915bb38e976504"
+def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
+def_pkg pkgconf "2.0.3" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "cabdf3c474529854f7ccce8573c5ac68ad34a7e621037535cbc3981f6b23836c"
+def_pkg binutils "2.41" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450"
+def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
+
 # environment variables
 export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 export CXXFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -154,16 +164,6 @@ done
     }
 }
 
-# define packages; has to be done after target is chosen to detect CPU-specific patch directories
-def_pkg mpc "1.3.1" "http://ftpmirror.gnu.org/mpc/mpc-#:ver:#.tar.gz" "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8"
-def_pkg musl "1.2.4" "http://musl.libc.org/releases/musl-#:ver:#.tar.gz" "7a35eae33d5372a7c0da1188de798726f68825513b7ae3ebe97aaaa52114f039"
-def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-#:ver:#.tar.xz" "277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2"
-def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-#:ver:#.tar.xz" "a0b5cb06d24f9fa9e77b55fabbe9a3c94a336190345c2555f9915bb38e976504"
-def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
-def_pkg pkgconf "2.0.3" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "cabdf3c474529854f7ccce8573c5ac68ad34a7e621037535cbc3981f6b23836c"
-def_pkg binutils "2.41" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450"
-def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
-
 # set the build directory for a new toolchain
 [ -d "$CCBROOT/out/${bname:-ccb-$CPU_NAME}" ] && {
     i="2"
@@ -179,6 +179,9 @@ def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.x
 [ "$JOBS" -ne 1 ] && jsuf="threads" || jsuf="thread"
 
 # ------------------------------------------------------------------------------
+
+# make options
+export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy MAKEINFO=false -j$JOBS"
 
 # print the starting status message
 [ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
@@ -226,18 +229,22 @@ run mkdir -p \
     usr/lib \
     usr/lib32 \
     usr/include \
-    usr/sbin \
     usr/share \
     usr/src
 
 # create symlinks
-for i in bin sbin lib lib32; do
+for i in bin lib lib32; do
     run ln -sf usr/$i $i
 done
 
-# symlink local to its parent
+# change to usr
 run cd "$bdir/usr"
+
+# symlink local to its parent
 run ln -sf . local
+
+# symlink the build target to its parent
+run ln -sf . "$TARGET"
 
 # cd to the source dir
 run cd "$bdir/usr/src"
@@ -252,6 +259,22 @@ prep_pkg gmp
 prep_pkg binutils
 prep_pkg gcc
 
+# Step 1: install musl headers
+# ------------------------------------------------------------------------------
+printstatus "Installing musl headers"
+
+# cd to the musl build dir
+run cd "$pkg_musl_dirname"
+
+# do tha thang
+run make $MAKEOPTS ARCH="$MUSL_ARCH" DESTDIR="$bdir" prefix="/usr" install-headers
+
+
+# Step 2: build binutils
+# ------------------------------------------------------------------------------
+
+
+# we're finished!
 # ------------------------------------------------------------------------------
 
 # get the end timestamp

@@ -130,7 +130,6 @@ def_pkg() {
     # set the directories to check for patches
     for i in "$CCBROOT/patches/$name" "$CCBROOT/patches/$name/$version" "$CCBROOT/patches/$name-$version"; do
         [ -d "$i" ] && patchpaths="${patchpaths:+$patchpaths }$i"
-        [ -d "$i/$CPU_NAME" ] && patchpaths="${patchpaths:+$patchpaths }$i/$CPU_NAME"
     done
     eval "pkg_${name}_patchpaths=\"$patchpaths\""
 }
@@ -224,6 +223,11 @@ prep_pkg() {
             [ -d "$i" ] && {
                 for j in $i/*.patch $i/*.diff; do
                     [ -r "$j" ] && run patch -p0 -i "$j"
+                done
+            }
+            [ -d "$i/$CPU_NAME" ] && {
+                for k in $i/*.patch $i/*.diff; do
+                    [ -r "$k" ] && run patch -p0 -i "$k"
                 done
             }
         done
