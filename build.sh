@@ -48,9 +48,9 @@ def_pkg libcxx "17.0.6" "https://github.com/llvm/llvm-project/releases/download/
 # environment variables
 export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 export CXXFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
-export LDFLAGS="-s -Wl,--gc-sections,-s,-z,norelro,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
+export LDFLAGS="-s -Wl,--gc-sections,-s,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
 export JOBS="1"
-export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy"
+export MAKEOPTS="INFO_DEPS= ac_cv_prog_lex_root=lex.yy"
 export MAKEINFO="missing"
 
 # (internal, no opt for now)
@@ -71,10 +71,6 @@ verify_hash="y"
 
 # do timestamping
 #timestamping="y"
-
-# replace some GNU toolchain components (ex. libstdc++) with llvm counterparts, requires cmake 😦
-# if it weren't for the cmake dependency this would be default
-#use_llvm="y"
 
 # by default, all output is printed; this will slow down the
 # script slightly but it's a requirement for debugging
@@ -117,10 +113,6 @@ while [ "$#" -gt 0 ]; do
 
         # pipe compiler/configure script output to ccbuild.log
         -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
-
-        # replace some GNU toolchain components with llvm counterparts
-        -L|--llvm) use_llvm="y"; shift ;;
-        --no-llvm) unset use_llvm; shift ;;
 
         # don't pipe compiler/configure script output to ccbuild.log (default)
         --no-log) unset buildlog; shift ;;
@@ -237,7 +229,7 @@ get_pkg gcc
 
 # optional
 [ "$use_pkgconf" = "y" ] && get_pkg pkgconf
-[ "$use_llvm" = "y" ] && get_pkg libcxx
+#[ "$use_llvm" = "y" ] && get_pkg libcxx
 
 # print a status message that the dir structure for the toolchain is being made
 printstatus "Creating directory structure"
@@ -252,13 +244,14 @@ run cd "$bdir"
 run mkdir -p \
     bin \
     lib \
-    libexec \
     lib32 \
+    libexec \
     include \
-    src/_tmp
+    src \
+    _tmp
 
 # symlink usr to its parent (compatibility)
-#run ln -sf . usr
+run ln -sf . usr
 
 # symlink local to its parent (compatibility)
 #run ln -sf . local
@@ -283,7 +276,7 @@ prep_pkg gcc
 
 # these as well
 [ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
-[ "$use_llvm" = "y" ] && prep_pkg libcxx
+#[ "$use_llvm" = "y" ] && prep_pkg libcxx
 
 
 # Step 1: install musl headers
@@ -312,9 +305,11 @@ run "../$pkg_binutils_dirname/configure" \
     --prefix="" \
     --exec-prefix="" \
     --sbindir="/bin" \
-    --datarootdir="/src/_tmp" \
+    --datarootdir="/_tmp" \
     --target="$TARGET" \
     --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
+    --with-gcc-major-version-only \
+    --with-boot-ldflags="$LDFLAGS" \
     --enable-compressed-debug-sections="none" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
@@ -328,6 +323,7 @@ run "../$pkg_binutils_dirname/configure" \
     --disable-dependency-tracking \
     --disable-rpath \
     $CPU_FLAGS
+
 
 # compile binutils
 printstatus "Compiling binutils-$pkg_binutils_version"
@@ -374,12 +370,90 @@ done
 # Step 3: build gcc
 # ------------------------------------------------------------------------------
 
+# link required libraries
+run cd "$bdir/src/$pkg_gcc_dirname"
+run ln -sf "../$pkg_gmp_dirname" "gmp"
+run ln -sf "../$pkg_mpfr_dirname" "mpfr"
+run ln -sf "../$pkg_mpc_dirname" "mpc"
+run ln -sf "../$pkg_isl_dirname" "isl"
+
+# create a build directory for gcc
+printstatus "Configuring gcc-$pkg_gcc_version"
+run mkdir "$bdir/src/build-gcc"
+run cd "$bdir/src/build-gcc"
+
+# configure gcc
+run "../$pkg_gcc_dirname/configure" \
+    --with-sysroot="/" \
+    --with-build-sysroot="$bdir" \
+    --prefix="" \
+    --exec-prefix="" \
+    --sbindir="/bin" \
+    --datarootdir="/_tmp" \
+    --target="$TARGET" \
+    --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
+    --with-gcc-major-version-only \
+    --with-boot-ldflags="$LDFLAGS" \
+    --enable-languages=c,c++ \
+    --enable-compressed-debug-sections="none" \
+    --enable-default-hash-style="sysv" \
+    --enable-default-pie \
+    --enable-static-pie \
+    --enable-relro \
+    --enable-libstdcxx=time=rt \
+    --enable-initfini-array \
+    --disable-bootstrap \
+    --disable-lto \
+    --disable-multilib \
+    --disable-werror \
+    --disable-dependency-tracking \
+    --disable-rpath \
+    --disable-libsanitizer \
+    --disable-linker-build-id \
+    $CPU_FLAGS
+
+# compile gcc
+printstatus "Compiling gcc-$pkg_gcc_version"
+run make \
+    $MAKEOPTS \
+    all-gcc
+
+# install gcc
+printstatus "Installing gcc-$pkg_gcc_version"
+run make \
+    $MAKEOPTS \
+    DESTDIR="$bdir" \
+    install-strip-gcc
+
+# remove redundant binaries to save space
+cd "$bdir/bin"
+run rm -rf \
+    $TARGET-gcc \
+    $TARGET-gcc-ar \
+    $TARGET-gcc-nm \
+    $TARGET-gcc-ranlib
+
+# symlinks
+run ln -sf $TARGET-ar $TARGET-gcc-ar
+run ln -sf $TARGET-nm $TARGET-gcc-nm
+run ln -sf $TARGET-ranlib $TARGET-gcc-ranlib
+run ln -sf $TARGET-gcc-${pkg_gcc_version%%.*} $TARGET-gcc
+
+# strip the target triplet from binary names
+for i in $TARGET-*; do
+    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
+done
+
+
+# Step 4: libgcc-static
+# ------------------------------------------------------------------------------
+
 
 # we're finished!
 # ------------------------------------------------------------------------------
 
 # remove junk
-run rm -rf "$bdir/src/_tmp"
+run rm -rf "$bdir/_tmp"
 
 # delete all sources if desired
 [ "$build_post_cleanup" = "y" ] && run rm -rf "$bdir/src"

@@ -1,11 +1,10 @@
 ## To-do
-- [ ] build gcc
 - [ ] build libgcc-static
-- [ ] add c89/c99 shell scripts
 - [ ] build musl libc
 - [ ] build libgcc-shared
 - [ ] build llvm's libc++
 - [ ] cpu arch build flags
+- [ ] add c89/c99 shell scripts
 - [ ] write readme
 - [ ] build-time dependency check script
 - [ ] optionally rebuild itself to make native cross-compilers

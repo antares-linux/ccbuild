@@ -425,7 +425,7 @@ run() {
 
     # decide what flags to append to commands
     case "${cmd##*/}" in
-        mkdir|cp|ln|rm|curl) suf="-v" ;;
+        mkdir|cp|ln|rm|curl|mv|tar) suf="-v" ;;
         cd|pushd|popd) printcd="y" ;;
     esac
 
