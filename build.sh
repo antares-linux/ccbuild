@@ -49,7 +49,8 @@ export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-con
 export CXXFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 export LDFLAGS="-s -Wl,--gc-sections,-s,-z,norelro,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
 export JOBS="1"
-export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy MAKEINFO=false"
+export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy"
+export MAKEINFO="missing"
 
 # (internal, no opt for now)
 # whether to use [l]ong or [s]hort suffixes for time units
