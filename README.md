@@ -7,5 +7,6 @@
 - [ ] build llvm's libc++
 - [ ] cpu arch build flags
 - [ ] write readme
-- [ ] build-time dependency checker
-- [ ] rebuild itself to make native cross-compilers
+- [ ] build-time dependency check script
+- [ ] optionally rebuild itself to make native cross-compilers
+- [ ] optionally build additional packages (eg. busybox) to make ccbuild semi self-hostable
