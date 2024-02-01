@@ -54,23 +54,27 @@ export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy"
 export MAKEINFO="missing"
 
 # (internal, no opt for now)
-# whether to use [l]ong or [s]hort suffixes for time units
+# use [l]ong or [s]hort suffixes for time units
 unitsize="l"
 
-# whether to verify checksums
+# verify checksums
 verify_hash="y"
 
-# whether to clean the build after it's finished
+# clean the build after it's finished
 #build_post_cleanup="y"
 
-# whether to print the command line to stdout
+# print the command line to stdout
 #printcmdline="y"
 
-# whether to download and build pkgconf
+# download and build pkgconf
 #use_pkgconf="y"
 
-# whether or not to do timestamping
+# do timestamping
 #timestamping="y"
+
+# replace some GNU toolchain components (ex. libstdc++) with llvm counterparts, requires cmake 😦
+# if it weren't for the cmake dependency this would be default
+#use_llvm="y"
 
 # by default, all output is printed; this will slow down the
 # script slightly but it's a requirement for debugging
@@ -113,6 +117,10 @@ while [ "$#" -gt 0 ]; do
 
         # pipe compiler/configure script output to ccbuild.log
         -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
+
+        # replace some GNU toolchain components with llvm counterparts
+        -L|--llvm) use_llvm="y"; shift ;;
+        --no-llvm) unset use_llvm; shift ;;
 
         # don't pipe compiler/configure script output to ccbuild.log (default)
         --no-log) unset buildlog; shift ;;
@@ -218,16 +226,18 @@ run mkdir -p "$CCBROOT/cache"
 # cd to the build directory
 run cd "$CCBROOT/cache"
 
-# download packages
-[ "$use_pkgconf" = "y" ] && get_pkg pkgconf
+# the base toolchain
 get_pkg mpc
 get_pkg musl
 get_pkg mpfr
 get_pkg isl
 get_pkg gmp
-get_pkg libcxx
 get_pkg binutils
 get_pkg gcc
+
+# optional
+[ "$use_pkgconf" = "y" ] && get_pkg pkgconf
+[ "$use_llvm" = "y" ] && get_pkg libcxx
 
 # print a status message that the dir structure for the toolchain is being made
 printstatus "Creating directory structure"
@@ -263,22 +273,24 @@ export PATH="$bdir/bin:$PATH"
 run cd "$bdir/src"
 
 # unpack and patch packages
-[ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
 prep_pkg mpc
 prep_pkg musl
 prep_pkg mpfr
 prep_pkg isl
 prep_pkg gmp
-prep_pkg libcxx
 prep_pkg binutils
 prep_pkg gcc
+
+# these as well
+[ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
+[ "$use_llvm" = "y" ] && prep_pkg libcxx
 
 
 # Step 1: install musl headers
 # ------------------------------------------------------------------------------
-printstatus "Installing musl headers"
 
 # cd to the musl build dir
+printstatus "Installing musl headers"
 run cd "$pkg_musl_dirname"
 
 # do tha thang
@@ -289,11 +301,11 @@ run make $MAKEOPTS ARCH="$MUSL_ARCH" DESTDIR="$bdir" prefix="" install-headers
 # ------------------------------------------------------------------------------
 
 # create a build directory for binutils
+printstatus "Configuring binutils-$pkg_binutils_version"
 run mkdir "../build-binutils"
 run cd "../build-binutils"
 
 # configure binutils
-printstatus "Configuring binutils-$pkg_binutils_version"
 run "../$pkg_binutils_dirname/configure" \
     --with-sysroot="/" \
     --with-build-sysroot="$bdir" \
@@ -332,7 +344,7 @@ run make \
     DESTDIR="$bdir" \
     install-strip-binutils \
     install-strip-gas \
-    install-strip-ld \
+    install-strip-ld
 
 # remove redundant binaries to save space
 cd "$bdir/bin"
