@@ -2,7 +2,7 @@
 
 # print the help message
 print_help() {
-    printf "Usage: $0 [OPTIONS]... [TARGET]
+    printf -- "Usage: $0 [OPTIONS]... [TARGET]
 
 Options:
       --allow-root       allow the script to be run with root privileges
@@ -34,7 +34,7 @@ require_command() {
 
     # check if it's a builtin/alias/$PATH binary
     command -v "$1" >/dev/null 2>&1 || {
-        printf "${0##*/}: $1: command not found\n" >&2
+        printf -- "${0##*/}: $1: command not found\n" >&2
         exit 3
     }
 }
@@ -42,8 +42,8 @@ require_command() {
 # print status messages
 printstatus() {
     [ "$printcmdline" != "y" ] && {
-        [ "$verbosity" = "normal" ] && [ -n "$buildlog" ] && printf "%s\n" "$1" >&2
-        [ "$verbosity" = "quieter" ] && printf "%s\n" "$1" >&2
+        [ "$verbosity" = "normal" ] && [ -n "$buildlog" ] && printf -- "%s\n" "$1" >&2
+        [ "$verbosity" = "quieter" ] && printf -- "%s\n" "$1" >&2
     }
 }
 
@@ -55,7 +55,7 @@ list_targets() {
             arches="${arches:+$arches }${i##*/}"
         }
     done
-    printf "$arches\n"
+    printf -- "$arches\n"
 }
 
 # read package vars
@@ -73,11 +73,11 @@ read_pkg() {
             eval "dirname=\"\$pkg_${1}_dirname\""
             eval "patchpaths=\"\$pkg_${1}_patchpaths\""
         } || {
-            printf "${0##*/}: error: read_pkg: Package $1 has not been defined\n" >&2
+            printf -- "${0##*/}: error: read_pkg: Package $1 has not been defined\n" >&2
             exit 1
         }
     } || {
-        printf "${0##*/}: error: read_pkg: No package name specified\n" >&2
+        printf -- "${0##*/}: error: read_pkg: No package name specified\n" >&2
         exit 1
     }
 }
@@ -88,12 +88,15 @@ def_pkg() {
     # require these commands
     require_command sed
 
+    # initialize these
+    unset name version link checksum dirname patchpaths
+
     # set the package name
     [ -n "$1" ] && {
         name="$1"
         eval "pkg_${name}_name=\"$name\""
     } || {
-        printf "${0##*/}: error: def_pkg: No package name specified\n" >&2
+        printf -- "${0##*/}: error: def_pkg: No package name specified\n" >&2
         exit 1
     }
 
@@ -105,11 +108,11 @@ def_pkg() {
 
     # set the package link
     [ -n "$3" ] && {
-        link="$(printf "$3" | sed -e "s/#:ver:#/$version/g")"
+        link="$(printf -- "$3" | sed -e "s/#:ver:#/$version/g")"
         eval "pkg_${name}_link=\"$link\""
         eval "pkg_${name}_archive=\"${link##*/}\""
     } || {
-        printf "${0##*/}: error: def_pkg: No package link specified\n" >&2
+        printf -- "${0##*/}: error: def_pkg: No package link specified\n" >&2
         exit 1
     }
 
@@ -121,14 +124,14 @@ def_pkg() {
 
     # set the package dirname, if the default should be overridden
     [ -n "$5" ] && {
-        dirname="$(printf "$5" | sed -e "s/#:ver:#/$version/g")"
+        dirname="$(printf -- "$5" | sed -e "s/#:ver:#/$version/g")"
     } || {
         dirname="$name-$version"
     }
     eval "pkg_${name}_dirname=\"$dirname\""
 
     # set the directories to check for patches
-    for i in "$CCBROOT/patches/$name" "$CCBROOT/patches/$name/$version" "$CCBROOT/patches/$name-$version"; do
+    for i in "$CCBROOT/patches/${name:-placeholder_name}" "$CCBROOT/patches/${name:-placeholder_name}/$version" "$CCBROOT/patches/${name:-placeholder_name}-$version"; do
         [ -d "$i" ] && patchpaths="${patchpaths:+$patchpaths }$i"
     done
     eval "pkg_${name}_patchpaths=\"$patchpaths\""
@@ -183,14 +186,17 @@ get_pkg() {
         dl_time="$(diff_timestamp "$dl_start_time" "$dl_end_time")"
 
         # add to the total amount of time spent downloading
-        download_time="$(printf "${download_time:+$download_time + }$dl_time\n" | bc -ql)"
-        [ -z "$(printf "$download_time" | awk -F. '{print $1}')" ] && download_time="0$download_time"
+        download_time="$(printf -- "${download_time:+$download_time + }$dl_time\n" | bc -ql)"
+        [ -z "$(printf -- "$download_time" | awk -F. '{print $1}')" ] && download_time="0$download_time"
     }
 
     # verify the hash of the tarball
     [ "$verify_hash" = "y" ] && {
         run check_hash "${link##*/}" "$checksum"
     }
+
+    # prevent the hash checking function from being run again on this package
+    eval "pkg_${name}_verified=y"
 }
 
 # prepare and patch a package for building
@@ -200,12 +206,18 @@ prep_pkg() {
 
     # check if the package is downloaded
     [ -r "$CCBROOT/cache/${link##*/}" ] || {
-        printf "${0##*/}: error: prep_pkg: Package not downloaded\n" >&2
+        printf -- "${0##*/}: error: prep_pkg: Package not downloaded\n" >&2
         exit 1
     }
 
+    # decide if we need to re-check the tarball's hash
+    eval "[ \"\$pkg_${name}_verified\" = y ]" || {
+        run check_hash "$CCBROOT/cache/${link##*/}" "$checksum"
+        eval "pkg_${name}_verified=y"
+    }
+
     # print a status message
-    printstatus "Unpacking ${link##*/}"
+    printstatus "Opening ${link##*/}"
 
     # unpack the tarball
     run tar -xpf "$CCBROOT/cache/${link##*/}"
@@ -244,34 +256,34 @@ check_hash() {
 
     # check if the specified file exists
     [ -r "$1" ] || {
-        printf "${0##*/}: error: $1: No such file or directory\n" >&2
+        printf -- "${0##*/}: error: $1: No such file or directory\n" >&2
         exit 1
     }
 
     # print a status message
-    printstatus "Verifying hash for $1"
+    printstatus "Hashing ${1##*/}"
 
     # guess the type of hash based on its length
-    case "$(printf "$2" | wc -c)" in
+    case "$(printf -- "$2" | wc -c)" in
            0) return 0 ;;
 
           32) test "$(md5sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
           40) test "$(sha1sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
           56) test "$(sha224sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
           64) test "$(sha256sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
           96) test "$(sha384sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
          128) test "$(sha512sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
+              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
            *) return 1;
      esac
@@ -285,8 +297,8 @@ get_timestamp() {
     # store time
     [ "$has_ns" = "y" ] && {
         time="$(date +%s.%N)"
-        eval "${1:+$1_}sec=\"$(printf "$time" | awk -F. '{print $1}')\""
-        eval "${1:+$1_}ms=\"$(printf "$time" | awk -F. '{print $2}' | head -c3)\""
+        eval "${1:+$1_}sec=\"$(printf -- "$time" | awk -F. '{print $1}')\""
+        eval "${1:+$1_}ms=\"$(printf -- "$time" | awk -F. '{print $2}' | head -c3)\""
         eval "${1:+$1_}time=\"$time\""
     } || {
         time="$(date +%s)"
@@ -303,19 +315,19 @@ diff_timestamp() {
     require_command bc awk head
 
     # pipe args into bc
-    ts_diff="$(printf "$2 - $1\n" | bc -ql)"
+    ts_diff="$(printf -- "$2 - $1\n" | bc -ql)"
     ts_diff="${ts_diff#-}"
-    #ts_diff="$(printf "$ts_diff + 100000000\n" | bc -ql)"
+    #ts_diff="$(printf -- "$ts_diff + 100000000\n" | bc -ql)"
 
     # get seconds
-    ts_diff_sec="$(printf "$ts_diff" | awk -F. '{print $1}')"
+    ts_diff_sec="$(printf -- "$ts_diff" | awk -F. '{print $1}')"
     ts_diff_sec="${ts_diff_sec:-0}"
 
     # get ms if possible
-    ts_diff_ms="$(printf "${ts_diff##$ts_diff_sec}" | awk -F. '{print $2}' | head -c3)"
+    ts_diff_ms="$(printf -- "${ts_diff##$ts_diff_sec}" | awk -F. '{print $2}' | head -c3)"
 
     # print the time difference
-    printf "$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}"
+    printf -- "$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}"
 }
 
 # format a timestamp string
@@ -325,8 +337,8 @@ fmt_timestamp() {
 
     # store time
     time="${1:-0}"
-    seconds="$(printf "$time" | awk -F. '{print $1}')"
-    miliseconds="$(printf "${time##$seconds}" | awk -F. '{print $2}' | head -c3)"
+    seconds="$(printf -- "$time" | awk -F. '{print $1}')"
+    miliseconds="$(printf -- "${time##$seconds}" | awk -F. '{print $2}' | head -c3)"
 
     # format suffixes
     [ "$unitsize" = "s" ] && {
@@ -450,12 +462,12 @@ run() {
     # run the command
     [ -n "$buildlog" ] && {
         [ "$printcd" = "y" ] && {
-            printf "CHANGE_DIRECTORY: $args\n" >>"$buildlog"
+            printf -- "CHANGE_DIRECTORY: $args\n" >>"$buildlog"
         } || {
-            printf "COMMAND: $cmd $args\n" >>"$buildlog"
+            printf -- "COMMAND: $cmd $args\n" >>"$buildlog"
         }
     }
-    [ "$printcmdline" = "y" ] && printf "\033[90m\$\033[0m\033[3m $cmd $args\033[0m\n" >&2
+    [ "$printcmdline" = "y" ] && printf -- "\033[90m\$\033[0m\033[3m $cmd $args\033[0m\n" >&2
 
     # run the command and catch errors
     eval "$cmd $args${suf:+ $suf}"
@@ -463,7 +475,7 @@ run() {
 
     # print an error msg and quit
     [ "$ec" -gt 0 ] && {
-        printf "${0##*/}: error: failed at \`$cmd $args\`\n" >&2
+        printf -- "${0##*/}: error: failed at \`$cmd $args\`\n" >&2
         exit "$ec"
     }
 

@@ -15,19 +15,19 @@ export CCBROOT="$PWD"
 
 # exit if ccbroot can't be set
 [ -n "$CCBROOT" ] || {
-    printf "${0##*/}: error: CCBROOT can't be set\n" >&2
+    printf -- "${0##*/}: error: CCBROOT can't be set\n" >&2
     exit 1
 }
 
 # exit if ccbroot isn't set correctly
 [ -r "$CCBROOT/${0##*/}" ] || {
-    printf "${0##*/}: error: CCBROOT set incorrectly\n" >&2
+    printf -- "${0##*/}: error: CCBROOT set incorrectly\n" >&2
     exit 1
 }
 
 # ensure util.sh exists
 [ -r "$CCBROOT/util.sh" ] || {
-    printf "${0##*/}: error: util.sh: No such file or directory\n" >&2
+    printf -- "${0##*/}: error: util.sh: No such file or directory\n" >&2
     exit 1
 }
 
@@ -43,6 +43,7 @@ def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "a3c2b8020
 def_pkg pkgconf "2.0.3" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "cabdf3c474529854f7ccce8573c5ac68ad34a7e621037535cbc3981f6b23836c"
 def_pkg binutils "2.41" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450"
 def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
+def_pkg libcxx "17.0.6" "https://github.com/llvm/llvm-project/releases/download/llvmorg-#:ver:#/libcxx-#:ver:#.src.tar.xz" "edf7b12046ada95c63bd6c57099e8452f68f8be0affd9af96df16fd48e632ec1" "libcxx-#:ver:#.src"
 
 # environment variables
 export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -151,7 +152,7 @@ done
 # warn the user about running as root
 [ "$allow_root" = "y" ] || {
     [ "${EUID:-${UID:-$(id -u)}}" -ne 0 >/dev/null 2>&1 ] || {
-        printf "${0##*/}: error: Running this script with root privileges is not recommended. Run \`$0 --allow-root\` to allow this.\n" >&2
+        printf -- "${0##*/}: error: Running this script with root privileges is not recommended. Run \`$0 --allow-root\` to allow this.\n" >&2
         exit 1
     }
 }
@@ -167,10 +168,10 @@ done
     . "$CCBROOT/arch/$target.conf"
 } || {
     [ -n "$target" ] && {
-        printf "${0##*/}: error: Invalid option or target $target\n" >&2
+        printf -- "${0##*/}: error: Invalid option or target $target\n" >&2
         exit 1
     } || {
-        printf "${0##*/}: error: No target specified. Run \`$0 --help\` for more information.\n" >&2
+        printf -- "${0##*/}: error: No target specified. Run \`$0 --help\` for more information.\n" >&2
         exit 1
     }
 }
@@ -197,7 +198,7 @@ export MAKEOPTS="${MAKEOPTS:+$MAKEOPTS }-j$JOBS"
 # ------------------------------------------------------------------------------
 
 # print the starting status message
-[ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
+[ "$verbosity" != "silent" ] && printf -- "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
 
 # timestamping setup
 [ "$timestamping" = "y" ] && {
@@ -224,6 +225,7 @@ get_pkg musl
 get_pkg mpfr
 get_pkg isl
 get_pkg gmp
+get_pkg libcxx
 get_pkg binutils
 get_pkg gcc
 
@@ -267,6 +269,7 @@ prep_pkg musl
 prep_pkg mpfr
 prep_pkg isl
 prep_pkg gmp
+prep_pkg libcxx
 prep_pkg binutils
 prep_pkg gcc
 
@@ -304,6 +307,7 @@ run "../$pkg_binutils_dirname/configure" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
     --enable-static-pie \
+    --enable-relro \
     --disable-bootstrap \
     --disable-lto \
     --disable-multilib \
@@ -311,7 +315,6 @@ run "../$pkg_binutils_dirname/configure" \
     --disable-linker-build-id \
     --disable-dependency-tracking \
     --disable-rpath \
-    --disable-relro \
     $CPU_FLAGS
 
 # compile binutils
@@ -374,4 +377,4 @@ run rm -rf "$bdir/src/_tmp"
     get_timestamp end
 }
 
-printf "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})${end_time:+ in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))} ${download_time:+($(fmt_timestamp "$download_time") spent downloading)}\n" >&2
+printf -- "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})${end_time:+ in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))} ${download_time:+($(fmt_timestamp "$download_time") spent downloading)}\n" >&2
