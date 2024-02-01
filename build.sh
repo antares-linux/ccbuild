@@ -49,10 +49,7 @@ export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-con
 export CXXFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 export LDFLAGS="-s -Wl,--gc-sections,-s,-z,norelro,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
 export JOBS="1"
-
-# by default, all output is printed; this will slow down the
-# script slightly but it's a requirement for debugging
-verbosity="normal"
+export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy MAKEINFO=false"
 
 # (internal, no opt for now)
 # whether to use [l]ong or [s]hort suffixes for time units
@@ -61,8 +58,21 @@ unitsize="l"
 # whether to verify checksums
 verify_hash="y"
 
+# whether to clean the build after it's finished
+#build_post_cleanup="y"
+
+# whether to print the command line to stdout
+#printcmdline="y"
+
 # whether to download and build pkgconf
 #use_pkgconf="y"
+
+# whether or not to do timestamping
+#timestamping="y"
+
+# by default, all output is printed; this will slow down the
+# script slightly but it's a requirement for debugging
+verbosity="normal"
 
 # ------------------------------------------------------------------------------
 
@@ -175,13 +185,15 @@ done
     export bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}"
 }
 
-# decide whether to say job or jobs
+# semantic
 [ "$JOBS" -ne 1 ] && jsuf="threads" || jsuf="thread"
 
-# ------------------------------------------------------------------------------
+# add the job count to MAKEOPTS
+export MAKEOPTS="${MAKEOPTS:+$MAKEOPTS }-j$JOBS"
 
-# make options
-export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy MAKEINFO=false -j$JOBS"
+
+# Step 0: set up the environment
+# ------------------------------------------------------------------------------
 
 # print the starting status message
 [ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
@@ -192,7 +204,7 @@ export MAKEOPTS="INFO_DEPS= infodir= ac_cv_prog_lex_root=lex.yy MAKEINFO=false -
     require_command date bc
 
     # check whether nanoseconds work
-    [ "$(date +%N | wc -c 2>/dev/null)" = "10" ] && has_ns="y"
+    [ "$(date +%N)" != '%N' ] && has_ns="y"
 
     # get the beginning
     get_timestamp start
@@ -225,29 +237,27 @@ run cd "$bdir"
 
 # create dirs
 run mkdir -p \
-    usr/bin \
-    usr/lib \
-    usr/lib32 \
-    usr/include \
-    usr/share \
-    usr/src
+    bin \
+    lib \
+    libexec \
+    lib32 \
+    include \
+    src/_tmp
 
-# create symlinks
-for i in bin lib lib32; do
-    run ln -sf usr/$i $i
-done
+# symlink usr to its parent (compatibility)
+#run ln -sf . usr
 
-# change to usr
-run cd "$bdir/usr"
-
-# symlink local to its parent
-run ln -sf . local
+# symlink local to its parent (compatibility)
+#run ln -sf . local
 
 # symlink the build target to its parent
 run ln -sf . "$TARGET"
 
+# append our root to the path
+export PATH="$bdir/bin:$PATH"
+
 # cd to the source dir
-run cd "$bdir/usr/src"
+run cd "$bdir/src"
 
 # unpack and patch packages
 [ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
@@ -259,6 +269,7 @@ prep_pkg gmp
 prep_pkg binutils
 prep_pkg gcc
 
+
 # Step 1: install musl headers
 # ------------------------------------------------------------------------------
 printstatus "Installing musl headers"
@@ -267,15 +278,95 @@ printstatus "Installing musl headers"
 run cd "$pkg_musl_dirname"
 
 # do tha thang
-run make $MAKEOPTS ARCH="$MUSL_ARCH" DESTDIR="$bdir" prefix="/usr" install-headers
+run make $MAKEOPTS ARCH="$MUSL_ARCH" DESTDIR="$bdir" prefix="" install-headers
 
 
 # Step 2: build binutils
 # ------------------------------------------------------------------------------
 
+# create a build directory for binutils
+run mkdir "../build-binutils"
+run cd "../build-binutils"
+
+# configure binutils
+printstatus "Configuring binutils-$pkg_binutils_version"
+run "../$pkg_binutils_dirname/configure" \
+    --with-sysroot="/" \
+    --with-build-sysroot="$bdir" \
+    --prefix="" \
+    --exec-prefix="" \
+    --sbindir="/bin" \
+    --datarootdir="/src/_tmp" \
+    --target="$TARGET" \
+    --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
+    --enable-compressed-debug-sections="none" \
+    --enable-default-hash-style="sysv" \
+    --enable-default-pie \
+    --enable-static-pie \
+    --disable-bootstrap \
+    --disable-lto \
+    --disable-multilib \
+    --disable-werror \
+    --disable-linker-build-id \
+    --disable-dependency-tracking \
+    --disable-rpath \
+    --disable-relro \
+    $CPU_FLAGS
+
+# compile binutils
+printstatus "Compiling binutils-$pkg_binutils_version"
+run make \
+    $MAKEOPTS \
+    all-binutils \
+    all-gas \
+    all-ld
+
+# install binutils
+printstatus "Installing binutils-$pkg_binutils_version"
+run make \
+    $MAKEOPTS \
+    DESTDIR="$bdir" \
+    install-strip-binutils \
+    install-strip-gas \
+    install-strip-ld \
+
+# remove redundant binaries to save space
+cd "$bdir/bin"
+run rm -rf \
+    $TARGET-ld \
+    ar \
+    as \
+    ld \
+    ld.bfd \
+    nm \
+    objcopy \
+    objdump \
+    ranlib \
+    readelf \
+    strings \
+    strip \
+
+# link ld.bfd to ld
+run ln -sf $TARGET-ld.bfd $TARGET-ld
+
+# strip the target triplet from binary names
+for i in $TARGET-*; do
+    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
+done
+
+
+# Step 3: build gcc
+# ------------------------------------------------------------------------------
+
 
 # we're finished!
 # ------------------------------------------------------------------------------
+
+# remove junk
+run rm -rf "$bdir/src/_tmp"
+
+# delete all sources if desired
+[ "$build_post_cleanup" = "y" ] && run rm -rf "$bdir/src"
 
 # get the end timestamp
 [ "$timestamping" = "y" ] && {
