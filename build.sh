@@ -66,6 +66,10 @@ verify_hash="y"
 # print the command line to stdout
 #printcmdline="y"
 
+# replace some GNU toolchain components (eg. libstdc++) with llvm counterparts
+# requires cmake for build
+#use_llvm="y"
+
 # download and build pkgconf
 #use_pkgconf="y"
 
@@ -113,6 +117,11 @@ while [ "$#" -gt 0 ]; do
 
         # pipe compiler/configure script output to ccbuild.log
         -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
+
+        # replace some GNU toolchain components (eg. libstdc++) with llvm counterparts
+        # requires cmake for build
+        -L|--llvm) use_llvm="y"; shift ;;
+        --no-llvm) unset use_llvm; shift ;;
 
         # don't pipe compiler/configure script output to ccbuild.log (default)
         --no-log) unset buildlog; shift ;;
@@ -229,7 +238,7 @@ get_pkg gcc
 
 # optional
 [ "$use_pkgconf" = "y" ] && get_pkg pkgconf
-#[ "$use_llvm" = "y" ] && get_pkg libcxx
+[ "$use_llvm" = "y" ] && get_pkg libcxx
 
 # print a status message that the dir structure for the toolchain is being made
 printstatus "Creating directory structure"
@@ -247,14 +256,12 @@ run mkdir -p \
     lib32 \
     libexec \
     include \
+    share \
     src \
     _tmp
 
 # symlink usr to its parent (compatibility)
 run ln -sf . usr
-
-# symlink local to its parent (compatibility)
-#run ln -sf . local
 
 # symlink the build target to its parent
 run ln -sf . "$TARGET"
@@ -276,7 +283,7 @@ prep_pkg gcc
 
 # these as well
 [ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
-#[ "$use_llvm" = "y" ] && prep_pkg libcxx
+[ "$use_llvm" = "y" ] && prep_pkg libcxx
 
 
 # Step 1: install musl headers
@@ -309,7 +316,6 @@ run "../$pkg_binutils_dirname/configure" \
     --target="$TARGET" \
     --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
     --with-boot-ldflags="$LDFLAGS" \
-    --enable-compressed-debug-sections="none" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
     --enable-static-pie \
@@ -360,16 +366,11 @@ run rm -rf \
 # link ld.bfd to ld
 run ln -sf $TARGET-ld.bfd $TARGET-ld
 
-# strip the target triplet from binary names
-for i in $TARGET-*; do
-    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
-done
-
 
 # Step 3: build gcc
 # ------------------------------------------------------------------------------
 
-# link required libraries
+# symlink required libraries
 run cd "$bdir/src/$pkg_gcc_dirname"
 run ln -sf "../$pkg_gmp_dirname" "gmp"
 run ln -sf "../$pkg_mpfr_dirname" "mpfr"
@@ -390,10 +391,9 @@ run "../$pkg_gcc_dirname/configure" \
     --sbindir="/bin" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
-    --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
+    --with-pkgversion="ccbuild $pkg_gcc_version-cross-musl" \
     --with-boot-ldflags="$LDFLAGS" \
     --enable-languages=c,c++ \
-    --enable-compressed-debug-sections="none" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
     --enable-static-pie \
@@ -460,14 +460,6 @@ run make \
     DESTDIR="$bdir" \
     install-strip-target-libgcc
 
-# move to the binary dir
-run cd "$bdir/bin"
-
-# strip the target triplet from binary names
-for i in $TARGET-*; do
-    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
-done
-
 # cd to the library dir
 cd "$bdir/lib"
 
@@ -497,12 +489,14 @@ run ./configure \
 # compile musl
 printstatus "Compiling musl-$pkg_musl_version"
 run make \
+    $MAKEOPTS \
     AR="$TARGET-ar" \
     RANLIB="$TARGET-ranlib"
 
 # install musl
 printstatus "Installing musl-$pkg_musl_version"
 run make \
+    $MAKEOPTS \
     AR="$TARGET-ar" \
     RANLIB="$TARGET-ranlib" \
     DESTDIR="$bdir" \
@@ -553,8 +547,50 @@ for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/
 done
 
 
+# Step 7: build libstdc++
+# ------------------------------------------------------------------------------
+
+# cd back to the gcc build dir
+printstatus "Configuring libstdc++-v3"
+run cd "$bdir/src/build-gcc"
+
+# configure libstdc++
+run make \
+    $MAKEOPTS \
+    configure-target-libstdc++-v3
+
+# compile libstdc++
+printstatus "Compiling libstdc++-v3"
+run make \
+    $MAKEOPTS \
+    all-target-libstdc++-v3
+
+# install libstdc++v3
+printstatus "Installing libstdc++-v3"
+run make \
+    $MAKEOPTS \
+    DESTDIR="$bdir" \
+    install-strip-target-libstdc++-v3
+
+# cd to the library dir
+cd "$bdir/lib"
+
+# create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
+for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
+    [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+done
+
+
 # we're finished!
 # ------------------------------------------------------------------------------
+
+# move to the binary dir
+run cd "$bdir/bin"
+
+# strip the target triplet from binary names
+for i in $TARGET-*; do
+    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
+done
 
 # remove junk
 run rm -rf "$bdir/_tmp"

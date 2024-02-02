@@ -1,5 +1,4 @@
 ## To-do
-- [ ] build libstdc++
 - [ ] cpu arch build flags
 - [ ] add c89/c99 shell scripts
 - [ ] write readme
