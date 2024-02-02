@@ -472,7 +472,83 @@ done
 cd "$bdir/lib"
 
 # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
-for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.a; do
+for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
+    [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+done
+
+
+# Step 5: build musl libc
+# ------------------------------------------------------------------------------
+
+# move to the musl build dir
+printstatus "Configuring musl-$pkg_musl_version"
+run cd "$bdir/src/$pkg_musl_dirname"
+
+# configure musl
+ARCH="$MUSL_ARCH" \
+CC="$TARGET-gcc" \
+CROSS_COMPILE="$TARGET-" \
+LIBCC="$bdir/lib/libgcc.a" \
+run ./configure \
+    --target="$TARGET" \
+    --host="$TARGET" \
+    --prefix=""
+
+# compile musl
+printstatus "Compiling musl-$pkg_musl_version"
+run make \
+    AR="$TARGET-ar" \
+    RANLIB="$TARGET-ranlib"
+
+# install musl
+printstatus "Installing musl-$pkg_musl_version"
+run make \
+    AR="$TARGET-ar" \
+    RANLIB="$TARGET-ranlib" \
+    DESTDIR="$bdir" \
+    install-libs install-tools
+
+# create links for the dynamic program loader
+cd "$bdir/lib"
+
+# unlink ld-musl-MUSL_ARCH.so.1
+run rm -rf "ld-musl-$MUSL_ARCH.so.1"
+
+# create new links symlink libc.so
+run ln -sf libc.so "ld-musl-$MUSL_ARCH.so.1"
+
+
+# Step 6: build libgcc-shared
+# ------------------------------------------------------------------------------
+
+# cd to the gcc build dir
+printstatus "Configuring libgcc-$pkg_gcc_version-shared"
+run cd "$bdir/src/build-gcc"
+
+# configure libgcc-shared
+run make \
+    $MAKEOPTS \
+    -C $TARGET/libgcc distclean
+
+# compile libgcc-shared
+printstatus "Compiling libgcc-$pkg_gcc_version-shared"
+run make \
+    $MAKEOPTS \
+    enable_shared=yes \
+    all-target-libgcc
+
+# install libgcc-shared
+printstatus "Installing libgcc-$pkg_gcc_version-shared"
+run make \
+    $MAKEOPTS \
+    DESTDIR="$bdir" \
+    install-strip-target-libgcc
+
+# cd to the library dir
+cd "$bdir/lib"
+
+# create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
+for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
     [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
 done
 
