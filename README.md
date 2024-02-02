@@ -1,5 +1,4 @@
 ## To-do
-- [ ] build libgcc-static
 - [ ] build musl libc
 - [ ] build libgcc-shared
 - [ ] build llvm's libc++
