@@ -21,6 +21,7 @@ Options:
       --no-pkgconfig     don't fetch and build pkgconf
   -q, --quieter          reduce output to status messages if printing to a terminal
   -s, --silent           completely disable output if printing to a terminal
+      --shell            spawn a subshell when the build finishes
       --targets          print a list of available targets and exit (default)
   -t, --timestamping     enable timestamping
       --no-timestamping  don't enable timestamping (default)

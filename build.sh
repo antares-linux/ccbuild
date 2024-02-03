@@ -43,15 +43,6 @@ def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "a3c2b8020
 def_pkg pkgconf "2.1.0" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "cabdf3c474529854f7ccce8573c5ac68ad34a7e621037535cbc3981f6b23836c"
 def_pkg binutils "2.42" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "f6e4d41fd5fc778b06b7891457b3620da5ecea1006c6a4a41ae998109f85a800"
 def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
-def_pkg libcxx "17.0.6" "https://github.com/llvm/llvm-project/releases/download/llvmorg-#:ver:#/libcxx-#:ver:#.src.tar.xz" "edf7b12046ada95c63bd6c57099e8452f68f8be0affd9af96df16fd48e632ec1" "libcxx-#:ver:#.src"
-
-# environment variables
-export CFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
-export CXXFLAGS="-pipe -Os -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
-export LDFLAGS="-s -Wl,--gc-sections,-s,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
-export JOBS="1"
-export MAKEOPTS="INFO_DEPS= ac_cv_prog_lex_root=lex.yy"
-export MAKEINFO="missing"
 
 # (internal, no opt for now)
 # use [l]ong or [s]hort suffixes for time units
@@ -66,9 +57,8 @@ verify_hash="y"
 # print the command line to stdout
 #printcmdline="y"
 
-# replace some GNU toolchain components (eg. libstdc++) with llvm counterparts
-# requires cmake for build
-#use_llvm="y"
+# shell/command to spawn the end of the build, but before post-build actions
+#spawn_shell="${SHELL:-/bin/sh}"
 
 # download and build pkgconf
 #use_pkgconf="y"
@@ -111,25 +101,20 @@ while [ "$#" -gt 0 ]; do
         --help) print_help; exit ;;
 
         # input a custom job number
-        -j|--jobs)            [ "$2" -le 1024 >&- 2>&- ] && export JOBS="$2"; shift 2 ;;
-        -j*)            [ "${1##-j}" -le 1024 >&- 2>&- ] && export JOBS="${1##-j}"; shift ;;
-        --jobs=*)  [ "${1##--jobs=}" -le 1024 >&- 2>&- ] && export JOBS="${1##--jobs=}"; shift ;;
+        -j|--jobs)            [ "$2" -le 1024 >&- 2>&- ] && jobs="$2"; shift 2 ;;
+        -j*)            [ "${1##-j}" -le 1024 >&- 2>&- ] && jobs="${1##-j}"; shift ;;
+        --jobs=*)  [ "${1##--jobs=}" -le 1024 >&- 2>&- ] && jobs="${1##--jobs=}"; shift ;;
 
         # pipe compiler/configure script output to ccbuild.log
         -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
-
-        # replace some GNU toolchain components (eg. libstdc++) with llvm counterparts
-        # requires cmake for build
-        -L|--llvm) use_llvm="y"; shift ;;
-        --no-llvm) unset use_llvm; shift ;;
 
         # don't pipe compiler/configure script output to ccbuild.log (default)
         --no-log) unset buildlog; shift ;;
 
         # specify a custom name for the build other than "ccb-ARCH.NUM"
-        -n|--name) export bname="$2";            shift 2 ;;
-        -n*)       export bname="${1##-n}";      shift ;;
-        --name=*)  export bname="${1##--name=}"; shift ;;
+        -n|--name) bname="$2";            shift 2 ;;
+        -n*)       bname="${1##-n}";      shift ;;
+        --name=*)  bname="${1##--name=}"; shift ;;
 
         # whether to download and use pkgconf
         -p|--pkgconf) use_pkgconf="y"; shift ;;
@@ -140,6 +125,10 @@ while [ "$#" -gt 0 ]; do
 
         # completely silent
         -s|--silent) verbosity="silent"; shift ;;
+
+        # spawn a shell under the script's environment after the build finishes
+        --shell) spawn_shell="${SHELL:-/bin/sh}"; shift ;;
+        --no-shell) unset spawn_shell; shift ;;
 
         # print a list of the available architectures and exit
         --targets) list_targets; exit ;;
@@ -172,6 +161,9 @@ done
     exit
 }
 
+# export these variables
+set -a
+
 # try to load the architecture build flags
 [ -r "$CCBROOT/arch/$target.conf" ] && {
     . "$CCBROOT/arch/$target.conf"
@@ -191,20 +183,32 @@ done
     while [ -d "$CCBROOT/out/${bname:-ccb-$CPU_NAME}.$i" ]; do
         i="$((i+1))"
     done
-    export bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}.$i"
+    bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}.$i"
 } || {
-    export bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}"
+    bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}"
 }
 
-# semantic
-[ "$JOBS" -ne 1 ] && jsuf="threads" || jsuf="thread"
+# environment variables
+CFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
+CXXFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
+LDFLAGS="-s -Wl,--gc-sections,-s,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
+JOBS="${jobs:-1}"
+MAKEINFO="missing"
+PATH="$bdir/bin:$PATH"
+DESTDIR="$bdir"
 
-# add the job count to MAKEOPTS
-export MAKEOPTS="${MAKEOPTS:+$MAKEOPTS }-j$JOBS"
+# make/cmake command lines
+MAKEOPTS="INFO_DEPS= ac_cv_prog_lex_root=lex.yy -j$JOBS"
+
+# don't export any more variables implicitly
+set +a
 
 
 # Step 0: set up the environment
 # ------------------------------------------------------------------------------
+
+# semantic
+[ "$JOBS" -ne 1 ] && jsuf="threads" || jsuf="thread"
 
 # print the starting status message
 [ "$verbosity" != "silent" ] && printf -- "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
@@ -238,7 +242,6 @@ get_pkg gcc
 
 # optional
 [ "$use_pkgconf" = "y" ] && get_pkg pkgconf
-[ "$use_llvm" = "y" ] && get_pkg libcxx
 
 # print a status message that the dir structure for the toolchain is being made
 printstatus "Creating directory structure"
@@ -266,9 +269,6 @@ run ln -sf . usr
 # symlink the build target to its parent
 run ln -sf . "$TARGET"
 
-# append our root to the path
-export PATH="$bdir/bin:$PATH"
-
 # cd to the source dir
 run cd "$bdir/src"
 
@@ -283,7 +283,6 @@ prep_pkg gcc
 
 # these as well
 [ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
-[ "$use_llvm" = "y" ] && prep_pkg libcxx
 
 
 # Step 1: install musl headers
@@ -551,8 +550,8 @@ done
 # ------------------------------------------------------------------------------
 
 # cd back to the gcc build dir
-printstatus "Configuring libstdc++-v3"
 run cd "$bdir/src/build-gcc"
+printstatus "Configuring libstdc++-v3"
 
 # configure libstdc++
 run make \
@@ -583,6 +582,12 @@ done
 
 # we're finished!
 # ------------------------------------------------------------------------------
+
+# cd to bdir
+run cd "$bdir"
+
+# give the user a shell if applicable
+[ -n "$spawn_shell" ] && HISTFILE="$CCBROOT/shell_history.txt" eval "$spawn_shell"
 
 # move to the binary dir
 run cd "$bdir/bin"
