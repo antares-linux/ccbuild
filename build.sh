@@ -469,6 +469,14 @@ for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/
     [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
 done
 
+# move to the binary dir
+run cd "$bdir/bin"
+
+# strip the target triplet from binary names
+for i in $TARGET-*; do
+    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
+done
+
 
 # Step 5: build musl libc
 # ------------------------------------------------------------------------------
@@ -590,14 +598,6 @@ run cd "$bdir"
 
 # give the user a shell if applicable
 [ -n "$spawn_shell" ] && HISTFILE="$CCBROOT/shell_history.txt" eval "$spawn_shell"
-
-# move to the binary dir
-run cd "$bdir/bin"
-
-# strip the target triplet from binary names
-for i in $TARGET-*; do
-    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
-done
 
 # remove junk
 run rm -rf "$bdir/_tmp"
