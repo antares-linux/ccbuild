@@ -190,6 +190,9 @@ set -a
     bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}"
 }
 
+# get the host's target
+HOST="$(gcc -v 2>&1 | awk '/Target:/ {print $2}')"
+
 # environment variables
 CFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 CXXFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -217,9 +220,6 @@ set +a
 
 # timestamping setup
 [ "$timestamping" = "y" ] && {
-    # these commands are required for timestamping
-    require_command date bc
-
     # check whether nanoseconds work
     [ "$(date +%N)" != '%N' ] && has_ns="y"
 
@@ -440,6 +440,14 @@ run ln -sf $TARGET-gcc-$pkg_gcc_version $TARGET-gcc
 run ln -sf $TARGET-gcc $TARGET-cc
 run ln -sf $TARGET-g++ $TARGET-c++
 
+# move to the binary dir
+run cd "$bdir/bin"
+
+# strip the target triplet from binary names
+for i in $TARGET-*; do
+    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
+done
+
 
 # Step 4: build libgcc-static
 # ------------------------------------------------------------------------------
@@ -467,14 +475,6 @@ cd "$bdir/lib"
 # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
 for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
     [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
-done
-
-# move to the binary dir
-run cd "$bdir/bin"
-
-# strip the target triplet from binary names
-for i in $TARGET-*; do
-    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
 done
 
 
