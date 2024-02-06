@@ -20,8 +20,8 @@ mkdir -p "$PWD/logs" || exit 1
 # for loop
 for t in $targets; do
     "$PWD/build.sh" --allow-root --log="$PWD/logs/build-$t.log" -j${cjobs:-1} -p $t >/dev/null 2>&1 && {
-        printf "$t works\n"
+        printf "$t \033[1;32mworks\033[0m\n"
     } || {
-        printf "$t doesn't work\n"
+        printf "$t \033[1;31mdoesn't work\033[0m\n"
     }
 done
