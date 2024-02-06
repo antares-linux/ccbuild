@@ -107,6 +107,8 @@ while [ "$#" -gt 0 ]; do
 
         # pipe compiler/configure script output to ccbuild.log
         -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
+        -l*)      buildlog="${1##-l}"; :>"$buildlog"; shift ;;
+        --log=*)  buildlog="${1##--log=}"; :>"$buildlog"; shift ;;
 
         # don't pipe compiler/configure script output to ccbuild.log (default)
         --no-log) unset buildlog; shift ;;
