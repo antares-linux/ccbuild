@@ -155,7 +155,7 @@ get_pkg() {
     [ -r "${link##*/}" ] && return 0
 
     # decide which download command to use
-    for i in lynx w3m rsync aria2c curl wget; do
+    for i in lynx w3m rsync wget curl aria2c; do
         command -v "$i" >/dev/null 2>&1 && gcmd="$i"
     done
 
@@ -420,7 +420,7 @@ fmt_timestamp() {
 }
 
 
-# wrapper function for running important commands (for verbosity/logging/etc)
+# wrapper function for running important commands: manages output content/redirection and argument parsing
 # slows down the script marginally, but I think it's useful enough to be worth it
 run() {
     # initialize these

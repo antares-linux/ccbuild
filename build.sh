@@ -553,13 +553,12 @@ run make \
     install-libs install-tools
 
 # create links for the dynamic program loader
-cd "$bdir/lib"
+run cd "$bdir/lib"
 
-# unlink ld-musl-MUSL_ARCH.so.1
-run rm -rf "ld-musl-$MUSL_ARCH.so.1"
-
-# create new links symlink libc.so
-run ln -sf libc.so "ld-musl-$MUSL_ARCH.so.1"
+# link names of the dynamic loader to libc.so
+for i in ld-*.so ld-*.so.*; do
+    [ -r "$i" ] && run ln -sf libc.so "$i"
+done
 
 
 # Step 6: build libgcc-shared
