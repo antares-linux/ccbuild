@@ -1,5 +1,10 @@
 #!/bin/sh
 
+# Copyright (C) 2024 Andrew Blue <andy@antareslinux.org>
+#
+# Distributed under the terms of the MIT license.
+# See the LICENSE file for more information.
+
 # fields are separated by '/' so each dir/file in a path is operated on
 _IFS="$IFS"
 IFS="/"
@@ -328,6 +333,18 @@ run "../$pkg_binutils_dirname/configure" \
     --disable-linker-build-id \
     --disable-dependency-tracking \
     --disable-rpath \
+    CC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
+    CXX_FOR_TARGET="$bdir/bin/$TARGET-g++" \
+    GCC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
+    AR_FOR_TARGET="$bdir/bin/$TARGET-ar" \
+    AS_FOR_TARGET="$bdir/bin/$TARGET-as" \
+    LD_FOR_TARGET="$bdir/bin/$TARGET-ld" \
+    NM_FOR_TARGET="$bdir/bin/$TARGET-nm" \
+    OBJCOPY_FOR_TARGET="$bdir/bin/$TARGET-objcopy" \
+    OBJDUMP_FOR_TARGET="$bdir/bin/$TARGET-objdump" \
+    RANLIB_FOR_TARGET="$bdir/bin/$TARGET-ranlib" \
+    READELF_FOR_TARGET="$bdir/bin/$TARGET-readelf" \
+    STRIP_FOR_TARGET="$bdir/bin/$TARGET-strip" \
     $CPU_FLAGS
 
 
@@ -409,6 +426,18 @@ run "../$pkg_gcc_dirname/configure" \
     --disable-rpath \
     --disable-libsanitizer \
     --disable-linker-build-id \
+    CC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
+    CXX_FOR_TARGET="$bdir/bin/$TARGET-g++" \
+    GCC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
+    AR_FOR_TARGET="$bdir/bin/$TARGET-ar" \
+    AS_FOR_TARGET="$bdir/bin/$TARGET-as" \
+    LD_FOR_TARGET="$bdir/bin/$TARGET-ld" \
+    NM_FOR_TARGET="$bdir/bin/$TARGET-nm" \
+    OBJCOPY_FOR_TARGET="$bdir/bin/$TARGET-objcopy" \
+    OBJDUMP_FOR_TARGET="$bdir/bin/$TARGET-objdump" \
+    RANLIB_FOR_TARGET="$bdir/bin/$TARGET-ranlib" \
+    READELF_FOR_TARGET="$bdir/bin/$TARGET-readelf" \
+    STRIP_FOR_TARGET="$bdir/bin/$TARGET-strip" \
     $CPU_FLAGS
 
 # compile gcc
@@ -493,7 +522,19 @@ LIBCC="$bdir/lib/libgcc.a" \
 run ./configure \
     --target="$TARGET" \
     --host="$TARGET" \
-    --prefix=""
+    --prefix="" \
+    CC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
+    CXX_FOR_TARGET="$bdir/bin/$TARGET-g++" \
+    GCC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
+    AR_FOR_TARGET="$bdir/bin/$TARGET-ar" \
+    AS_FOR_TARGET="$bdir/bin/$TARGET-as" \
+    LD_FOR_TARGET="$bdir/bin/$TARGET-ld" \
+    NM_FOR_TARGET="$bdir/bin/$TARGET-nm" \
+    OBJCOPY_FOR_TARGET="$bdir/bin/$TARGET-objcopy" \
+    OBJDUMP_FOR_TARGET="$bdir/bin/$TARGET-objdump" \
+    RANLIB_FOR_TARGET="$bdir/bin/$TARGET-ranlib" \
+    READELF_FOR_TARGET="$bdir/bin/$TARGET-readelf" \
+    STRIP_FOR_TARGET="$bdir/bin/$TARGET-strip"
 
 # compile musl
 printstatus "Compiling musl-$pkg_musl_version"
