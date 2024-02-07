@@ -1,5 +1,10 @@
 #!/bin/sh
 
+# Copyright (C) 2024 Andrew Blue <andy@antareslinux.org>
+#
+# Distributed under the terms of the MIT license.
+# See the LICENSE file for more information.
+
 # print the help message
 print_help() {
     printf -- "Usage: $0 [OPTIONS]... [TARGET]
