@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# override the 'makeinfo' command to prevent it from being used
+return 0

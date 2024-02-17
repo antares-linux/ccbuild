@@ -94,6 +94,7 @@ while [ "$#" -gt 0 ]; do
         --allow-root) allow_root="y"; shift ;;
 
         # disable sha256 hash checking
+        --checkhash)    verify_hash="y"; shift ;;
         --no-checkhash) unset verify_hash; shift ;;
 
         # clean CCBROOT
@@ -108,12 +109,16 @@ while [ "$#" -gt 0 ]; do
         --no-cmdline) unset printcmdline; shift ;;
 
         # c++ support (enabled by default)
-        --enable-c[xp+]) use_cxx="y"; shift ;;
-        --disable-c[xp+]) unset use_cxx; shift ;;
+        --enable-c[xp+][xp+])  use_cxx="y"; shift ;;
+        --disable-c[xp+][xp+]) unset use_cxx; shift ;;
 
         # fortran support
         --enable-ft|--enable-fortran)   use_fortran="y" use_quadmath="y"; shift ;;
         --disable-ft|--disable-fortran) unset use_fortran use_quadmath; shift ;;
+
+        # whether to download and use pkgconf
+        --enable-pkgconf)  use_pkgconf="y"; shift ;;
+        --disable-pkgconf) unset use_pkgconf; shift ;;
 
         # quadmath support
         --enable-quadmath)  use_quadmath="y"; shift ;;
@@ -137,10 +142,6 @@ while [ "$#" -gt 0 ]; do
         -n|--name) bname="$2";            shift 2 ;;
         -n*)       bname="${1##-n}";      shift ;;
         --name=*)  bname="${1##--name=}"; shift ;;
-
-        # whether to download and use pkgconf
-        -p|--pkgconf) use_pkgconf="y"; shift ;;
-        --no-pkgconf) unset use_pkgconf; shift ;;
 
         # quieter, terse output (status msgs)
         -q|--quieter) verbosity="quieter"; shift ;;
@@ -218,9 +219,7 @@ CFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constan
 CXXFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
 LDFLAGS="-s -Wl,--gc-sections,-s,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
 JOBS="${jobs:-1}"
-MAKEINFO="missing"
-PATH="$bdir/bin:$PATH"
-DESTDIR="$bdir"
+PATH="$CCBROOT/misc/bin:$bdir/bin:$PATH"
 
 # gcc langs
 GCCLANGS="c"
@@ -228,7 +227,7 @@ GCCLANGS="c"
 [ "$use_fortran" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}fortran"
 
 # make/cmake command lines
-MAKEOPTS="INFO_DEPS= ac_cv_prog_lex_root=lex.yy -j$JOBS"
+MAKEOPTS="INFO_DEPS= MAKEINFO=true ac_cv_prog_lex_root=lex.yy -j$JOBS"
 
 # don't export any more variables implicitly
 set +a
@@ -284,17 +283,19 @@ run mkdir -p \
     bin \
     lib \
     lib32 \
-    libexec \
     include \
-    share \
     src \
-    _tmp
+    _tmp \
+    "$TARGET/bin"
 
 # symlink usr to its parent (compatibility)
 run ln -sf . usr
 
-# symlink the build target to its parent
-run ln -sf . "$TARGET"
+# create symlinks
+run cd "$bdir/$TARGET"
+run ln -sf ../lib lib
+run ln -sf ../lib32 lib32
+run ln -sf ../include include
 
 # cd to the source dir
 run cd "$bdir/src"
@@ -338,6 +339,7 @@ run "../$pkg_binutils_dirname/configure" \
     --prefix="" \
     --exec-prefix="" \
     --sbindir="/bin" \
+    --libexecdir="/lib" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
     --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
@@ -374,23 +376,29 @@ run make \
     install-strip-ld
 
 # remove redundant binaries to save space
-cd "$bdir/bin"
-run rm -rf \
-    $TARGET-ld \
-    ar \
-    as \
-    ld \
-    ld.bfd \
-    nm \
-    objcopy \
-    objdump \
-    ranlib \
-    readelf \
-    strings \
-    strip \
+run cd "$bdir/bin"
+
+# empty path
+for i in $TARGET-*; do
+    # move or delete
+    [ -r "../$TARGET/bin/${i##$TARGET-}" ] && {
+        run rm -f "$i"
+    } || {
+        run mv -f "$i" "../$TARGET/bin/${i##$TARGET-}"
+    }
+done
 
 # link ld.bfd to ld
-run ln -sf $TARGET-ld.bfd $TARGET-ld
+run cd "$bdir/$TARGET/bin"
+run ln -sf ld.bfd ld
+
+# move back to where binaries can be accessed by PATH
+run cd "$bdir/bin"
+
+# link utils to path
+for i in ../$TARGET/bin/*; do
+    [ -r "$TARGET-${i##*/}" ] || run ln -sf "$i" "$TARGET-${i##*/}"
+done
 
 
 # Step 3: build gcc
@@ -415,6 +423,7 @@ run "../$pkg_gcc_dirname/configure" \
     --prefix="" \
     --exec-prefix="" \
     --sbindir="/bin" \
+    --libexecdir="/lib" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
     --with-pkgversion="ccbuild $pkg_gcc_version-cross-musl" \
@@ -450,7 +459,7 @@ run make \
     install-strip-gcc
 
 # remove redundant binaries to save space
-cd "$bdir/bin"
+run cd "$bdir/bin"
 run rm -rf \
     $TARGET-gcc \
     $TARGET-gcc-ar \
@@ -464,14 +473,6 @@ run ln -sf $TARGET-ranlib $TARGET-gcc-ranlib
 run ln -sf $TARGET-gcc-$pkg_gcc_version $TARGET-gcc
 run ln -sf $TARGET-gcc $TARGET-cc
 run ln -sf $TARGET-g++ $TARGET-c++
-
-# move to the binary dir
-run cd "$bdir/bin"
-
-# strip the target triplet from binary names
-for i in $TARGET-*; do
-    [ -r "${i##$TARGET-}" ] || run ln -sf $i ${i##$TARGET-}
-done
 
 
 # Step 4: build libgcc-static
@@ -495,7 +496,7 @@ run make \
     install-strip-target-libgcc
 
 # cd to the library dir
-cd "$bdir/lib"
+run cd "$bdir/lib"
 
 # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
 for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
@@ -513,25 +514,11 @@ run cd "$bdir/src/$pkg_musl_dirname"
 # configure musl
 ARCH="$MUSL_ARCH" \
 CC="$TARGET-gcc" \
-CROSS_COMPILE="$TARGET-" \
 LIBCC="$bdir/lib/libgcc.a" \
+CROSS_COMPILE="$TARGET-" \
 run ./configure \
-    --target="$TARGET" \
     --host="$TARGET" \
-    --prefix="" \
-    CC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
-    CXX_FOR_TARGET="$bdir/bin/$TARGET-g++" \
-    GCC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
-    GFORTRAN_FOR_TARGET="$bdir/bin/$TARGET-gfortran" \
-    AR_FOR_TARGET="$bdir/bin/$TARGET-ar" \
-    AS_FOR_TARGET="$bdir/bin/$TARGET-as" \
-    LD_FOR_TARGET="$bdir/bin/$TARGET-ld" \
-    NM_FOR_TARGET="$bdir/bin/$TARGET-nm" \
-    OBJCOPY_FOR_TARGET="$bdir/bin/$TARGET-objcopy" \
-    OBJDUMP_FOR_TARGET="$bdir/bin/$TARGET-objdump" \
-    RANLIB_FOR_TARGET="$bdir/bin/$TARGET-ranlib" \
-    READELF_FOR_TARGET="$bdir/bin/$TARGET-readelf" \
-    STRIP_FOR_TARGET="$bdir/bin/$TARGET-strip"
+    --prefix=""
 
 # compile musl
 printstatus "Compiling musl-$pkg_musl_version"
@@ -585,7 +572,7 @@ run make \
     install-strip-target-libgcc
 
 # cd to the library dir
-cd "$bdir/lib"
+run cd "$bdir/lib"
 
 # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
 for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
@@ -632,6 +619,7 @@ done
 
 
 # Step 8: build libquadmath
+# ------------------------------------------------------------------------------
 
 # don't build if not enabled
 [ "$use_quadmath" = "y" ] && {
@@ -668,7 +656,7 @@ done
 }
 
 
-# Step 8: build libgfortran
+# Step 9: build libgfortran
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled

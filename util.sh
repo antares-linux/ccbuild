@@ -11,32 +11,35 @@ print_help() {
 
 Options:
       --allow-root          allow the script to be run with root privileges
+      --checkhash           verify hashes of downloaded packages (default)
       --no-checkhash        don't verify hashes of downloaded packages
       --clean               remove all cached tarballs, builds, and logs
   -C, --cleanup             clean up unpacked sources for the current build
       --no-cleanup          don't clean up unpacked sources for the current build (default)
   -c, --cmdline             print relevant commands as they are processed
       --no-cmdline          don't print relevant commands as they are processed (default)
-      --enable-cxx          build c++ support (default)
-      --disable-cxx         don't build c++ support
-      --enable-fortran      build fortran support
-      --disable-fortran     don't build fortran support (default)
-      --enable-quadmath     build libquadmath (default if fortran is enabled)
-      --disable-quadmath    don't build quadmath (default)
   -h, --help                print this message
   -j, --jobs=JOBS           concurrent job/task count
   -l, --log                 log build information to ccbuild.log
       --no-log              don't log build information to ccbuild.log (default)
   -n, --name=NAME           name of the build (default: ccb-TARGET)
-  -p, --pkgconfig           fetch and build pkgconf configured for the toolchain (default)
-      --no-pkgconfig        don't fetch and build pkgconf
   -q, --quieter             reduce output to status messages if printing to a terminal
   -s, --silent              completely disable output if printing to a terminal
       --shell               spawn a subshell when the build finishes
       --targets             print a list of available targets and exit (default)
   -t, --timestamping        enable timestamping
       --no-timestamping     don't enable timestamping (default)
-  -v, --verbose             enable all terminal output (default)\n"
+  -v, --verbose             enable all terminal output (default)
+
+Packages:
+  --enable-cxx          build c++ support (default)
+  --disable-cxx         don't build c++ support
+  --enable-fortran      build fortran support
+  --disable-fortran     don't build fortran support (default)
+  --enable-pkgconf      fetch and build pkgconf configured for the toolchain (default)
+  --disable-pkgconf     don't fetch and build pkgconf
+  --enable-quadmath     build libquadmath (default if fortran is enabled)
+  --disable-quadmath    don't build quadmath (default)\n"
 }
 
 # ensure a provided command is installed
@@ -204,7 +207,7 @@ get_pkg() {
 
     # verify the hash of the tarball
     [ "$verify_hash" = "y" ] && {
-        run check_hash "${link##*/}" "$checksum"
+        check_hash "${link##*/}" "$checksum"
     }
 
     # prevent the hash checking function from being run again on this package
@@ -224,7 +227,7 @@ prep_pkg() {
 
     # decide if we need to re-check the tarball's hash
     eval "[ \"\$pkg_${name}_verified\" = y ]" || {
-        run check_hash "$CCBROOT/cache/${link##*/}" "$checksum"
+        check_hash "$CCBROOT/cache/${link##*/}" "$checksum"
         eval "pkg_${name}_verified=y"
     }
 
@@ -279,22 +282,22 @@ check_hash() {
     case "$(printf -- "$2" | wc -c)" in
            0) return 0 ;;
 
-          32) test "$(md5sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+          32) run test "$(md5sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
               [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
-          40) test "$(sha1sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+          40) run test "$(sha1sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
               [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
-          56) test "$(sha224sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+          56) run test "$(sha224sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
               [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
-          64) test "$(sha256sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+          64) run test "$(sha256sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
               [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
-          96) test "$(sha384sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+          96) run test "$(sha384sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
               [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
-         128) test "$(sha512sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
+         128) run test "$(sha512sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
               [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
 
            *) return 1;
