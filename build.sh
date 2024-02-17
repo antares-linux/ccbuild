@@ -56,14 +56,23 @@ unitsize="l"
 # verify checksums
 verify_hash="y"
 
+# use c++
+use_cxx="y"
+
+# use fortran
+#use_fortran="y"
+
+# use libquadmath
+#use_quadmath="y"
+
 # clean the build after it's finished
-#build_post_cleanup="y"
+build_post_cleanup="y"
 
 # print the command line to stdout
 #printcmdline="y"
 
 # shell/command to spawn the end of the build, but before post-build actions
-#spawn_shell="${SHELL:-/bin/sh}"
+#spawn_shell="y"
 
 # download and build pkgconf
 #use_pkgconf="y"
@@ -92,18 +101,26 @@ while [ "$#" -gt 0 ]; do
 
         # clean the build after it's finished
         -C|--cleanup) build_post_cleanup="y"; shift ;;
-
-        # disable post-build cleaning
         --no-cleanup) unset build_post_cleanup; shift ;;
 
         # print the command line to stdout
         -c|--cmdline) printcmdline="y"; shift ;;
-
-        # don't print the command line to stdout (default)
         --no-cmdline) unset printcmdline; shift ;;
 
+        # c++ support (enabled by default)
+        --enable-c[xp+]) use_cxx="y"; shift ;;
+        --disable-c[xp+]) unset use_cxx; shift ;;
+
+        # fortran support
+        --enable-ft|--enable-fortran)   use_fortran="y" use_quadmath="y"; shift ;;
+        --disable-ft|--disable-fortran) unset use_fortran use_quadmath; shift ;;
+
+        # quadmath support
+        --enable-quadmath)  use_quadmath="y"; shift ;;
+        --disable-quadmath) unset use_quadmath; shift ;;
+
         # print help
-        --help) print_help; exit ;;
+        -h|--help) print_help; exit ;;
 
         # input a custom job number
         -j|--jobs)            [ "$2" -le 1024 >&- 2>&- ] && jobs="$2"; shift 2 ;;
@@ -114,8 +131,6 @@ while [ "$#" -gt 0 ]; do
         -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
         -l*)      buildlog="${1##-l}"; :>"$buildlog"; shift ;;
         --log=*)  buildlog="${1##--log=}"; :>"$buildlog"; shift ;;
-
-        # don't pipe compiler/configure script output to ccbuild.log (default)
         --no-log) unset buildlog; shift ;;
 
         # specify a custom name for the build other than "ccb-ARCH.NUM"
@@ -134,7 +149,7 @@ while [ "$#" -gt 0 ]; do
         -s|--silent) verbosity="silent"; shift ;;
 
         # spawn a shell under the script's environment after the build finishes
-        --shell) spawn_shell="${SHELL:-/bin/sh}"; shift ;;
+        --shell) spawn_shell="y"; shift ;;
         --no-shell) unset spawn_shell; shift ;;
 
         # print a list of the available architectures and exit
@@ -206,6 +221,11 @@ JOBS="${jobs:-1}"
 MAKEINFO="missing"
 PATH="$bdir/bin:$PATH"
 DESTDIR="$bdir"
+
+# gcc langs
+GCCLANGS="c"
+[ "$use_cxx" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}c++"
+[ "$use_fortran" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}fortran"
 
 # make/cmake command lines
 MAKEOPTS="INFO_DEPS= ac_cv_prog_lex_root=lex.yy -j$JOBS"
@@ -399,7 +419,7 @@ run "../$pkg_gcc_dirname/configure" \
     --target="$TARGET" \
     --with-pkgversion="ccbuild $pkg_gcc_version-cross-musl" \
     --with-boot-ldflags="$LDFLAGS" \
-    --enable-languages=c,c++ \
+    --enable-languages="$GCCLANGS" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
     --enable-static-pie \
@@ -458,7 +478,7 @@ done
 # ------------------------------------------------------------------------------
 
 # move back to the gcc build dir
-printstatus "Compiling libgcc-$pkg_gcc_version-static"
+printstatus "Compiling libgcc-static"
 run cd "$bdir/src/build-gcc"
 
 # compile gcc
@@ -468,7 +488,7 @@ run make \
     all-target-libgcc
 
 # install gcc
-printstatus "Installing libgcc-$pkg_gcc_version-static"
+printstatus "Installing libgcc-static"
 run make \
     $MAKEOPTS \
     DESTDIR="$bdir" \
@@ -502,6 +522,7 @@ run ./configure \
     CC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
     CXX_FOR_TARGET="$bdir/bin/$TARGET-g++" \
     GCC_FOR_TARGET="$bdir/bin/$TARGET-gcc" \
+    GFORTRAN_FOR_TARGET="$bdir/bin/$TARGET-gfortran" \
     AR_FOR_TARGET="$bdir/bin/$TARGET-ar" \
     AS_FOR_TARGET="$bdir/bin/$TARGET-as" \
     LD_FOR_TARGET="$bdir/bin/$TARGET-ld" \
@@ -541,7 +562,7 @@ done
 # ------------------------------------------------------------------------------
 
 # cd to the gcc build dir
-printstatus "Configuring libgcc-$pkg_gcc_version-shared"
+printstatus "Configuring libgcc-shared"
 run cd "$bdir/src/build-gcc"
 
 # configure libgcc-shared
@@ -550,14 +571,14 @@ run make \
     -C $TARGET/libgcc distclean
 
 # compile libgcc-shared
-printstatus "Compiling libgcc-$pkg_gcc_version-shared"
+printstatus "Compiling libgcc-shared"
 run make \
     $MAKEOPTS \
     enable_shared=yes \
     all-target-libgcc
 
 # install libgcc-shared
-printstatus "Installing libgcc-$pkg_gcc_version-shared"
+printstatus "Installing libgcc-shared"
 run make \
     $MAKEOPTS \
     DESTDIR="$bdir" \
@@ -575,35 +596,114 @@ done
 # Step 7: build libstdc++
 # ------------------------------------------------------------------------------
 
-# cd back to the gcc build dir
-run cd "$bdir/src/build-gcc"
-printstatus "Configuring libstdc++-v3"
+# don't build if not enabled
+[ "$use_cxx" = "y" ] && {
 
-# configure libstdc++
-run make \
-    $MAKEOPTS \
-    configure-target-libstdc++-v3
+    # cd back to the gcc build dir
+    run cd "$bdir/src/build-gcc"
+    printstatus "Configuring libstdc++-v3"
 
-# compile libstdc++
-printstatus "Compiling libstdc++-v3"
-run make \
-    $MAKEOPTS \
-    all-target-libstdc++-v3
+    # configure libstdc++
+    run make \
+        $MAKEOPTS \
+        configure-target-libstdc++-v3
 
-# install libstdc++v3
-printstatus "Installing libstdc++-v3"
-run make \
-    $MAKEOPTS \
-    DESTDIR="$bdir" \
-    install-strip-target-libstdc++-v3
+    # compile libstdc++
+    printstatus "Compiling libstdc++-v3"
+    run make \
+        $MAKEOPTS \
+        all-target-libstdc++-v3
 
-# cd to the library dir
-cd "$bdir/lib"
+    # install libstdc++v3
+    printstatus "Installing libstdc++-v3"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libstdc++-v3
 
-# create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
-for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
-    [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
-done
+    # cd to the library dir
+    cd "$bdir/lib"
+
+    # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
+    for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
+        [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+    done
+}
+
+
+# Step 8: build libquadmath
+
+# don't build if not enabled
+[ "$use_quadmath" = "y" ] && {
+
+    # cd back to the gcc build dir
+    run cd "$bdir/src/build-gcc"
+
+    # configure libstdc++
+    printstatus "Configuring libquadmath"
+    run make \
+        $MAKEOPTS \
+        configure-target-libquadmath
+
+    # compile libstdc++
+    printstatus "Compiling libquadmath"
+    run make \
+        $MAKEOPTS \
+        all-target-libquadmath
+
+    # install libgfortran
+    printstatus "Installing libquadmath"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-target-libquadmath
+
+    # cd to the library dir
+    cd "$bdir/lib"
+
+    # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
+    for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a gcc/$TARGET/$pkg_gcc_version/*.la; do
+        [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+    done
+}
+
+
+# Step 8: build libgfortran
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_fortran" = "y" ] && {
+
+    # cd back to the gcc build dir
+    run cd "$bdir/src/build-gcc"
+
+    # configure libstdc++
+    printstatus "Configuring libgfortran"
+    run make \
+        $MAKEOPTS \
+        configure-target-libgfortran
+
+    # compile libstdc++
+    printstatus "Compiling libgfortran"
+    run make \
+        $MAKEOPTS \
+        all-target-libgfortran
+
+    # install libgfortran
+    printstatus "Installing libgfortran"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libgfortran
+
+    # cd to the library dir
+    cd "$bdir/lib"
+
+    # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
+    for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a gcc/$TARGET/$pkg_gcc_version/*.la; do
+        [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+    done
+}
 
 
 # we're finished!
@@ -613,7 +713,7 @@ done
 run cd "$bdir"
 
 # give the user a shell if applicable
-[ -n "$spawn_shell" ] && HISTFILE="$CCBROOT/shell_history.txt" eval "$spawn_shell"
+[ -n "$spawn_shell" ] && HISTFILE="$CCBROOT/shell_history.txt" eval "${SHELL:-/bin/sh}"
 
 # remove junk
 run rm -rf "$bdir/_tmp"

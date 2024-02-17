@@ -10,27 +10,33 @@ print_help() {
     printf -- "Usage: $0 [OPTIONS]... [TARGET]
 
 Options:
-      --allow-root       allow the script to be run with root privileges
-      --no-checkhash     don't verify hashes of downloaded packages
-      --clean            remove all cached tarballs, builds, and logs
-  -C, --cleanup          clean up unpacked sources for the current build
-      --no-cleanup       don't clean up unpacked sources for the current build (default)
-  -c, --cmdline          print relevant commands as they are processed
-      --no-cmdline       don't print relevant commands as they are processed (default)
-      --help             print this message
-  -j, --jobs=JOBS        concurrent job/task count
-  -l, --log              log build information to ccbuild.log
-      --no-log           don't log build information to ccbuild.log (default)
-  -n, --name=NAME        name of the build (default: ccb-TARGET)
-  -p, --pkgconfig        fetch and build pkgconf configured for the toolchain (default)
-      --no-pkgconfig     don't fetch and build pkgconf
-  -q, --quieter          reduce output to status messages if printing to a terminal
-  -s, --silent           completely disable output if printing to a terminal
-      --shell            spawn a subshell when the build finishes
-      --targets          print a list of available targets and exit (default)
-  -t, --timestamping     enable timestamping
-      --no-timestamping  don't enable timestamping (default)
-  -v, --verbose          enable all terminal output (default)\n"
+      --allow-root          allow the script to be run with root privileges
+      --no-checkhash        don't verify hashes of downloaded packages
+      --clean               remove all cached tarballs, builds, and logs
+  -C, --cleanup             clean up unpacked sources for the current build
+      --no-cleanup          don't clean up unpacked sources for the current build (default)
+  -c, --cmdline             print relevant commands as they are processed
+      --no-cmdline          don't print relevant commands as they are processed (default)
+      --enable-cxx          build c++ support (default)
+      --disable-cxx         don't build c++ support
+      --enable-fortran      build fortran support
+      --disable-fortran     don't build fortran support (default)
+      --enable-quadmath     build libquadmath (default if fortran is enabled)
+      --disable-quadmath    don't build quadmath (default)
+  -h, --help                print this message
+  -j, --jobs=JOBS           concurrent job/task count
+  -l, --log                 log build information to ccbuild.log
+      --no-log              don't log build information to ccbuild.log (default)
+  -n, --name=NAME           name of the build (default: ccb-TARGET)
+  -p, --pkgconfig           fetch and build pkgconf configured for the toolchain (default)
+      --no-pkgconfig        don't fetch and build pkgconf
+  -q, --quieter             reduce output to status messages if printing to a terminal
+  -s, --silent              completely disable output if printing to a terminal
+      --shell               spawn a subshell when the build finishes
+      --targets             print a list of available targets and exit (default)
+  -t, --timestamping        enable timestamping
+      --no-timestamping     don't enable timestamping (default)
+  -v, --verbose             enable all terminal output (default)\n"
 }
 
 # ensure a provided command is installed
