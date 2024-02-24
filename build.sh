@@ -56,14 +56,44 @@ unitsize="l"
 # verify checksums
 verify_hash="y"
 
+# use libatomic
+#use_atomic="y"
+
+# use libbacktrace
+#use_backtrace="y"
+
 # use c++
 use_cxx="y"
+
+# use libffi
+#use_ffi="y"
 
 # use fortran
 #use_fortran="y"
 
+# use libgomp
+#use_gomp="y"
+
+# use libitm
+#use_itm="y"
+
+# use lto
+#use_lto="y"
+
+# use libphobos
+#use_phobos="y"
+
+# download and build pkgconf
+#use_pkgconf="y"
+
 # use libquadmath
 #use_quadmath="y"
+
+# use libssp
+#use_ssp="y"
+
+# use libvtv
+#use_vtv="y"
 
 # clean the build after it's finished
 build_post_cleanup="y"
@@ -73,9 +103,6 @@ build_post_cleanup="y"
 
 # shell/command to spawn the end of the build, but before post-build actions
 #spawn_shell="y"
-
-# download and build pkgconf
-#use_pkgconf="y"
 
 # do timestamping
 #timestamping="y"
@@ -108,13 +135,41 @@ while [ "$#" -gt 0 ]; do
         -c|--cmdline) printcmdline="y"; shift ;;
         --no-cmdline) unset printcmdline; shift ;;
 
+        # libatomic support
+        --enable-atomic)  use_atomic="y"; shift ;;
+        --disable-atomic) unset use_atomic; shift ;;
+
+        # libbacktrace support
+        --enable-backtrace)  use_backtrace="y"; shift ;;
+        --disable-backtrace) unset use_backtrace; shift ;;
+
         # c++ support (enabled by default)
         --enable-c[xp+][xp+])  use_cxx="y"; shift ;;
         --disable-c[xp+][xp+]) unset use_cxx; shift ;;
 
+        # libffi support
+        --enable-ffi)  use_ffi="y"; shift ;;
+        --disable-ffi) unset use_ffi; shift ;;
+
         # fortran support
         --enable-ft|--enable-fortran)   use_fortran="y" use_quadmath="y"; shift ;;
         --disable-ft|--disable-fortran) unset use_fortran use_quadmath; shift ;;
+
+        # libgomp support
+        --enable-gomp|--enable-openmp)   use_gomp="y"; shift ;;
+        --disable-gomp|--disable-openmp) unset use_gomp; shift ;;
+
+        # libitm support
+        --enable-itm)  use_itm="y"; shift ;;
+        --disable-itm) unset use_itm; shift ;;
+
+        # lto support
+        --enable-lto)  use_lto="y"; shift ;;
+        --disable-lto) unset use_lto; shift ;;
+
+        # libphobos support
+        --enable-phobos)  use_phobos="y"; shift ;;
+        --disable-phobos) unset use_phobos; shift ;;
 
         # whether to download and use pkgconf
         --enable-pkgconf)  use_pkgconf="y"; shift ;;
@@ -123,6 +178,14 @@ while [ "$#" -gt 0 ]; do
         # quadmath support
         --enable-quadmath)  use_quadmath="y"; shift ;;
         --disable-quadmath) unset use_quadmath; shift ;;
+
+        # libssp support
+        --enable-ssp)  use_ssp="y"; shift ;;
+        --disable-ssp) unset use_ssp; shift ;;
+
+        # libvtv support
+        --enable-vtv)  use_vtv="y"; shift ;;
+        --disable-vtv) unset use_vtv; shift ;;
 
         # print help
         -h|--help) print_help; exit ;;
@@ -211,6 +274,9 @@ set -a
     bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}"
 }
 
+# shell prompt
+PS1="\[\033[1;90m\]ccbuild*\[\033[0m\]$PS1"
+
 # get the host's target
 HOST="$(gcc -v 2>&1 | awk '/Target:/ {print $2}')"
 
@@ -225,6 +291,7 @@ PATH="$CCBROOT/misc/bin:$bdir/bin:$PATH"
 GCCLANGS="c"
 [ "$use_cxx" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}c++"
 [ "$use_fortran" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}fortran"
+[ "$use_lto" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}lto"
 
 # make/cmake command lines
 MAKEOPTS="INFO_DEPS= MAKEINFO=true ac_cv_prog_lex_root=lex.yy -j$JOBS"
@@ -343,13 +410,13 @@ run "../$pkg_binutils_dirname/configure" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
     --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
-    --with-boot-ldflags="$LDFLAGS" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
     --enable-static-pie \
     --enable-relro \
     --disable-bootstrap \
     --disable-lto \
+    "${use_lto:+--enable-lto}" \
     --disable-multilib \
     --disable-werror \
     --disable-linker-build-id \
@@ -427,7 +494,6 @@ run "../$pkg_gcc_dirname/configure" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
     --with-pkgversion="ccbuild $pkg_gcc_version-cross-musl" \
-    --with-boot-ldflags="$LDFLAGS" \
     --enable-languages="$GCCLANGS" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
@@ -437,6 +503,7 @@ run "../$pkg_gcc_dirname/configure" \
     --enable-initfini-array \
     --disable-bootstrap \
     --disable-lto \
+    "${use_lto:+--enable-lto}" \
     --disable-multilib \
     --disable-werror \
     --disable-dependency-tracking \
@@ -585,7 +652,6 @@ done
 
 # don't build if not enabled
 [ "$use_cxx" = "y" ] && {
-
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
     printstatus "Configuring libstdc++-v3"
@@ -623,23 +689,22 @@ done
 
 # don't build if not enabled
 [ "$use_quadmath" = "y" ] && {
-
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
-    # configure libstdc++
+    # configure libquadmath
     printstatus "Configuring libquadmath"
     run make \
         $MAKEOPTS \
         configure-target-libquadmath
 
-    # compile libstdc++
+    # compile libquadmath
     printstatus "Compiling libquadmath"
     run make \
         $MAKEOPTS \
         all-target-libquadmath
 
-    # install libgfortran
+    # install libquadmath
     printstatus "Installing libquadmath"
     run make \
         $MAKEOPTS \
@@ -656,22 +721,99 @@ done
 }
 
 
-# Step 9: build libgfortran
+# Step 9: build libatomic
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_atomic" = "y" ] && {
+    # cd back to the gcc build dir
+    run cd "$bdir/src/build-gcc"
+
+    # configure libatomic
+    printstatus "Configuring libatomic"
+    run make \
+        $MAKEOPTS \
+        configure-target-libatomic
+
+    # compile libatomic
+    printstatus "Compiling libatomic"
+    run make \
+        $MAKEOPTS \
+        all-target-libatomic
+
+    # install libatomic
+    printstatus "Installing libatomic"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libatomic
+}
+
+
+# Step 10: build libbacktrace
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_backtrace" = "y" ] && {
+    # configure libbacktrace
+    printstatus "Configuring libbacktrace"
+    run make \
+        $MAKEOPTS \
+        configure-target-libbacktrace
+
+    # compile libbacktrace
+    printstatus "Compiling libbacktrace"
+    run make \
+        $MAKEOPTS \
+        all-target-libbacktrace
+
+    # install libbacktrace
+    printstatus "Installing libbacktrace"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libbacktrace
+}
+
+
+# Step 11: build libffi
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_ffi" = "y" ] && {
+    # configure libffi
+    printstatus "Configuring libffi"
+    run make \
+        $MAKEOPTS \
+        configure-target-libffi
+
+    # compile libffi
+    printstatus "Compiling libffi"
+    run make \
+        $MAKEOPTS \
+        all-target-libffi
+
+    # install libffi
+    printstatus "Installing libffi"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libffi
+}
+
+
+# Step 12: build libgfortran
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
 [ "$use_fortran" = "y" ] && {
-
-    # cd back to the gcc build dir
-    run cd "$bdir/src/build-gcc"
-
-    # configure libstdc++
+    # configure libgfortran
     printstatus "Configuring libgfortran"
     run make \
         $MAKEOPTS \
         configure-target-libgfortran
 
-    # compile libstdc++
+    # compile libgfortran
     printstatus "Compiling libgfortran"
     run make \
         $MAKEOPTS \
@@ -691,6 +833,139 @@ done
     for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a gcc/$TARGET/$pkg_gcc_version/*.la; do
         [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
     done
+}
+
+
+# Step 13: build libgomp
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_gomp" = "y" ] && {
+    # cd back to the gcc build dir
+    run cd "$bdir/src/build-gcc"
+
+    # configure libgomp
+    printstatus "Configuring libgomp"
+    run make \
+        $MAKEOPTS \
+        configure-target-libgomp
+
+    # compile libgomp
+    printstatus "Compiling libgomp"
+    run make \
+        $MAKEOPTS \
+        all-target-libgomp
+
+    # install libgomp
+    printstatus "Installing libgomp"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libgomp
+}
+
+
+# Step 14: build libitm
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_itm" = "y" ] && {
+    # configure libitm
+    printstatus "Configuring libitm"
+    run make \
+        $MAKEOPTS \
+        configure-target-libitm
+
+    # compile libitm
+    printstatus "Compiling libitm"
+    run make \
+        $MAKEOPTS \
+        all-target-libitm
+
+    # install libitm
+    printstatus "Installing libitm"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libitm
+}
+
+
+# Step 15: build libphobos
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_phobos" = "y" ] && {
+    # configure libphobos
+    printstatus "Configuring libphobos"
+    run make \
+        $MAKEOPTS \
+        configure-target-libphobos
+
+    # compile libphobos
+    printstatus "Compiling libphobos"
+    run make \
+        $MAKEOPTS \
+        all-target-libphobos
+
+    # install libphobos
+    printstatus "Installing libphobos"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libphobos
+}
+
+
+# Step 16: build libssp
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_ssp" = "y" ] && {
+    # configure libssp
+    printstatus "Configuring libssp"
+    run make \
+        $MAKEOPTS \
+        configure-target-libssp
+
+    # compile libssp
+    printstatus "Compiling libssp"
+    run make \
+        $MAKEOPTS \
+        all-target-libssp
+
+    # install libssp
+    printstatus "Installing libssp"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libssp
+}
+
+
+# Step 17: build libvtv
+# ------------------------------------------------------------------------------
+
+# don't build if not enabled
+[ "$use_vtv" = "y" ] && {
+    # configure libvtv
+    printstatus "Configuring libvtv"
+    run make \
+        $MAKEOPTS \
+        configure-target-libvtv
+
+    # compile libvtv
+    printstatus "Compiling libvtv"
+    run make \
+        $MAKEOPTS \
+        all-target-libvtv
+
+    # install libvtv
+    printstatus "Installing libvtv"
+    run make \
+        $MAKEOPTS \
+        DESTDIR="$bdir" \
+        install-strip-target-libvtv
 }
 
 

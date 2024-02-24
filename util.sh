@@ -15,15 +15,17 @@ Options:
       --no-checkhash        don't verify hashes of downloaded packages
       --clean               remove all cached tarballs, builds, and logs
   -C, --cleanup             clean up unpacked sources for the current build
-      --no-cleanup          don't clean up unpacked sources for the current build (default)
+      --no-cleanup          don't clean up sources for the current build
   -c, --cmdline             print relevant commands as they are processed
-      --no-cmdline          don't print relevant commands as they are processed (default)
+      --no-cmdline          don't print relevant commands as they are processed
+      --enable-PACKAGE      enable (acquire and build) PACKAGE
+      --disable-PACKAGE     disable (don't acquire and build) PACKAGE
   -h, --help                print this message
   -j, --jobs=JOBS           concurrent job/task count
   -l, --log                 log build information to ccbuild.log
       --no-log              don't log build information to ccbuild.log (default)
   -n, --name=NAME           name of the build (default: ccb-TARGET)
-  -q, --quieter             reduce output to status messages if printing to a terminal
+  -q, --quieter             reduce output if printing to a terminal
   -s, --silent              completely disable output if printing to a terminal
       --shell               spawn a subshell when the build finishes
       --targets             print a list of available targets and exit (default)
@@ -32,14 +34,20 @@ Options:
   -v, --verbose             enable all terminal output (default)
 
 Packages:
-  --enable-cxx          build c++ support (default)
-  --disable-cxx         don't build c++ support
-  --enable-fortran      build fortran support
-  --disable-fortran     don't build fortran support (default)
-  --enable-pkgconf      fetch and build pkgconf configured for the toolchain (default)
-  --disable-pkgconf     don't fetch and build pkgconf
-  --enable-quadmath     build libquadmath (default if fortran is enabled)
-  --disable-quadmath    don't build quadmath (default)\n"
+   'atomic',
+   'backtrace',
+   'cxx',
+   'ffi',
+   'fortran',
+   'itm',
+   'lto',
+   'openmp',
+   'phobos',
+   'pkgconf',
+   'quadmath',
+   'ssp',
+   'vtv'
+"
 }
 
 # ensure a provided command is installed
@@ -433,7 +441,7 @@ fmt_timestamp() {
 # slows down the script marginally, but I think it's useful enough to be worth it
 run() {
     # initialize these
-    unset cmd argc argv args suf printcd ec
+    unset cmd args suf printcd ec
 
     # store the command name
     require_command "$1" && cmd="$1" && shift
@@ -455,6 +463,12 @@ run() {
     # output handling
     [ -n "$buildlog" ] && {
         suf="${suf:+$suf }>>'$buildlog' 2>&1"
+
+        # don't write output of tar/rm, wastes over a dozen megabytes of disk space
+        # and is absolutely useless
+        case "${cmd##*/}" in
+            rm|tar) suf=">/dev/null 2>>'$buildlog'"
+        esac
     } || {
         suf="${suf:+$suf }2>&1"
     }
@@ -468,9 +482,7 @@ run() {
 
     # sanitize arguments with quotes
     while [ "$#" -gt 0 ]; do
-        argc="$((argc+1))"
-        eval "argv$argc=\'\"$1\"\'"
-        eval "args=\"\${args:+\$args }\$argv$argc\""
+        args="${args:+$args }'$1'"
         shift
     done
 
@@ -495,5 +507,5 @@ run() {
     }
 
     # initialize these
-    unset cmd argc argv args suf
+    unset cmd args suf
 }

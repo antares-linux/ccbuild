@@ -23,7 +23,7 @@ cjobs="$(nproc)"
 mkdir -p "$PWD/logs" || exit 1
 
 # flags
-printf "${@:+additional flags: $@\n}"
+eval "printf \"${@:+additional flags: $@\n}\""
 
 # for loop
 for t in $targets; do

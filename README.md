@@ -1,5 +1,5 @@
 ## To-do
 - [ ] build pkgconf
-- [ ] build extra gcc libs (libatomic,libgomp...)
+- [ ] fix broken packages
 - [ ] write readme
 - [ ] dependency check script
