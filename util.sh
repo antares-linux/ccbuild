@@ -2,7 +2,7 @@
 
 # Copyright (C) 2024 Andrew Blue <andy@antareslinux.org>
 #
-# Distributed under the terms of the MIT license.
+# Distributed under the terms of the ISC license.
 # See the LICENSE file for more information.
 
 # print the help message
