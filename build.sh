@@ -14,6 +14,10 @@
 # this should be implied on all invocations
 alias printf="printf --"
 
+# a few shells don't have this; in our case, variables just need to be emptied
+# rather than undefined so this backup fills that role
+command -v unset >/dev/null 2>&1 || eval "unset() { for _i in \"\$@\"; do eval \"\$_i=\\\"\\\"\"; done; }"
+
 # fields are separated by '/' so each path element is operated on
 _IFS="$IFS"
 IFS="/"
@@ -66,7 +70,7 @@ def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-\${version}/gcc-\${versio
 # parse command-line arguments
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --clean)                rm -rf "$CCBROOT/build" "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"; exit $? ;;
+        --clean)                rm -rf "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"; exit $? ;;
         -C|--cleanup)           clean_src="y"; shift ;;
         +C|--no-cleanup)        clean_src="n"; shift ;;
         -c|--cmdline)           log_commands="y"; shift ;;
@@ -111,7 +115,7 @@ while [ "$#" -gt 0 ]; do
         --shell)                spawn_shell="y"; shift ;;
         --time-fmt)             str_match "$2" 'l' 's' && time_fmt="$2"; shift 2 ;;
         --time-fmt=*)           str_match "${1##--ts-unit-fmt=}" 'l' 's' && time_fmt="${1##--ts-unit-fmt=}"; shift ;;
-        --targets)              list_targets; exit ;;
+        --targets)              for i in "$CCBROOT"/arch/*.conf; do test -L "$i" && continue; i="${i%%.conf}"; printf "${i##*/} "; done; printf "\n"; exit ;;
         -v|--verbose)           verbosity="normal"; shift ;;
         *)                      test -z "$target" && target="${1%%/}"; shift ;;
     esac
@@ -166,6 +170,7 @@ CXXFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-const
 LDFLAGS="-s -Wl,--gc-sections,-s,-z,now,--hash-style=sysv,--build-id=none,--sort-section,alignment"
 JOBS="${jobs:-1}"
 PATH="$CCBROOT/misc/bin:$bdir/bin:$PATH"
+HISTFILE="$CCBROOT/shell_history.txt"
 
 # gcc langs
 GCCLANGS="c"
@@ -194,16 +199,16 @@ has_command date bc && {
     [ "$(date +%N)" != '%N' ] && has_ns="y"
 
     # get the starting time for the build
-    get_timestamp start
+    start_time="$(get_timestamp)"
 }
 
-# create the build dir
-run mkdir -p "$CCBROOT/cache"
+# create a dir to store downloaded files
+[ ! -d "$CCBROOT/cache" ] && run mkdir -p "$CCBROOT/cache"
 
-# cd to the build directory
+# cd to the cache dir
 run cd "$CCBROOT/cache"
 
-# the base toolchain
+# get source tarballs
 get_pkg mpc
 get_pkg musl
 get_pkg mpfr
@@ -322,9 +327,9 @@ for i in $TARGET-*; do
     # move or delete
     [ -r "../$TARGET/bin/${i##$TARGET-}" ] && {
         run rm -f "$i"
-    } || {
-        run mv -f "$i" "../$TARGET/bin/${i##$TARGET-}"
+        continue
     }
+    run mv -f "$i" "../$TARGET/bin/${i##$TARGET-}"
 done
 
 # link ld.bfd to ld
@@ -843,4 +848,18 @@ done
 # we're finished!
 # ------------------------------------------------------------------------------
 
-ccb_exit
+# we might want to open a shell here
+run cd "$bdir"
+[ "$spawn_shell" = "y" ] && eval "${SHELL:-/bin/sh}"
+
+# delete useless directories
+[ -d "$bdir/_tmp" ] && run rm -rf "$bdir/_tmp"
+[ -d "$bdir/src" -a "$clean_src" = "y" ] && run rm -rf "$bdir/src"
+
+# get the end timestamp
+test "$timestamping" = "y" && end_time="$(get_timestamp)"
+
+# print status message
+printf "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})%s%s\n" \
+    "$(test -n "$end_time" && printf " in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))")" \
+    "$(test -n "$download_time" && printf " ($(fmt_timestamp "$download_time") spent downloading)")" >&2

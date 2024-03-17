@@ -8,23 +8,6 @@
 
 # garbage bin file
 
-# a few shells don't have this; in our case, variables just need to be emptied
-# rather than undefined so this backup fills that role
-_unset() {
-    unalias unset
-    has_command unset && {
-        unset "$@"
-        alias unset="_unset"
-        return
-    }
-    alias unset="_unset"
-    for _i in "$@"; do
-        eval "$_i=\"\""
-    done
-}
-
-alias unset="_unset"
-
 # help message
 print_help() {
     printf "\
@@ -84,9 +67,7 @@ str_match() {
     _str="$1"
     shift
     for _i in "$@"; do
-        set -f
-        eval "case \"$_str\" in $_i) set +f; return 0 ;; esac"
-        set +f
+        eval "case \"$_str\" in $_i) return 0 ;; esac"
     done
     return 1
 }
@@ -96,30 +77,6 @@ printstatus() {
     test "$log_commands" = "y" && return
     test "$verbosity" = "normal" -a -n "$log_file" && printf "%s\n" "$1" >&2
     test "$verbosity" = "quieter" && printf "%s\n" "$1" >&2
-}
-
-# print a list of the non-symbolic files in ./arch/ (kinda useful)
-list_targets() {
-    for _i in "$CCBROOT"/arch/*.conf; do
-        test -L "$_i" && continue
-        i="${i%%.conf}"
-        printf "${i##*/} "
-    done
-    printf "\n"
-}
-
-# exit by ending the build
-ccb_exit() {
-    run cd "$bdir"
-    test "$spawn_shell" = "y" && HISTFILE="$CCBROOT/shell_history.txt" eval "${SHELL:-/bin/sh}"
-    test -d "$bdir/_tmp" && run rm -rf "$bdir/_tmp"
-    test -d "$bdir/src"  && test "$clean_src" = "y" && run rm -rf "$bdir/src"
-    test "$timestamping" = "y" && get_timestamp end
-    printf "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})" >&2
-    test -n "$end_time"      && printf " in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))" >&2
-    test -n "$download_time" && printf " ($(fmt_timestamp "$download_time") spent downloading)" >&2
-    printf "\n" >&2
-    exit
 }
 
 # read package vars
@@ -147,7 +104,7 @@ def_pkg() {
     test -z "$3" && error "def_pkg: No package link specified"
     link="$3"
     eval "pkg_${name}_link=\"$link\""
-    dirname="${4:-${name}-${version}}"
+    dirname="${4:-${name}${version:+-$version}}"
     eval "pkg_${name}_dirname=\"$dirname\""
     archive="${5:-${3##*/}}"
     eval "pkg_${name}_archive=\"$archive\""
@@ -160,26 +117,24 @@ def_pkg() {
 
 # download a package
 get_pkg() {
-    unset name version link archive dirname patchpaths
-    unset current_download_start_time current_download_end_time current_download_time
-
+    unset _cur_start_time _cur_end_time _cur_time
     read_pkg "$1"
     test -r "$archive" && return 0
     eval "printstatus \"Downloading \${pkg_${1}_link##*/}\""
-    test "$timestamping" = "y" && get_timestamp current_download_start
+    test "$timestamping" = "y" && _cur_start="$(get_timestamp)"
 
     for _i in "aria2c -s \"$JOBS\" -j \"$JOBS\" -o \"$archive\" \"$link\"" \
-             "curl -fL# -o \"$archive\" \"$link\"" \
-             "wget -O \"$archive\" \"$link\"" \
-             "lynx -dump \"$link\" > \"$archive\""
-        do has_command "${i%% *}" && eval "run $_i" && break
+              "curl -fL# -o \"$archive\" \"$link\"" \
+              "wget -O \"$archive\" \"$link\"" \
+              "lynx -dump \"$link\" > \"$archive\""
+        do has_command "${_i%% *}" && eval "run $_i" && break
     done
-    check_hash "$1" && eval "pkg_${name}_verified=y"
+    run check_hash "$name" && eval "pkg_${name}_verified=y"
 
     test "$timestamping" != "y" && return
-    get_timestamp current_download_end
-    current_download_time="$(diff_timestamp "$current_download_start_time" "$current_download_end_time")"
-    download_time="$(printf "${download_time:+$download_time + }$current_download_time\n" | bc -ql)"
+    _cur_end="$(get_timestamp)"
+    _cur_time="$(diff_timestamp "$_cur_start" "$_cur_end")"
+    download_time="$(printf "${download_time:+$download_time + }$_cur_time\n" | bc -ql)"
     test -z "${download_time%%.*}" && download_time="0$download_time"
 }
 
@@ -187,7 +142,7 @@ get_pkg() {
 prep_pkg() {
     read_pkg "$1"
     [ -r "$CCBROOT/cache/$archive" ] || error "prep_pkg: $name: Package not downloaded"
-    eval "test \"pkg_${name}_verified\" != \"y\"" && check_hash "$1"
+    eval "test \"pkg_${name}_verified\" != \"y\"" && run check_hash "$1"
     printstatus "Opening $archive"
     run tar -xpf "$CCBROOT/cache/$archive"
     run test -d "$dirname"
@@ -208,63 +163,63 @@ prep_pkg() {
 
 # check hashes for downloaded files
 check_hash() {
-    unset hashcmd computed_hash stored_hash
+    unset _hashcmd _computed_hash _stored_hash
     read_pkg "$1"
     printstatus "Hashing $archive"
     for _i in "$CCBROOT"/hashes/${name}/${archive}.*; do
-        has_command "${i##*/${archive}.}sum" || continue
-        hashcmd="${i##*/${archive}.}sum"
-        computed_hash="$($hashcmd "$CCBROOT/cache/$archive")"
-        computed_hash="${computed_hash%% *}"
-        stored_hash="$(while IFS= read -r line; do printf "$line"; done <"$_i")"
-        test "$computed_hash" = "$stored_hash" || error "${hashcmd}: ${archive}: Hash mismatch or compute failure"
-        break
+        has_command "${_i##*/${archive}.}sum" || continue
+        _hashcmd="${_i##*/${archive}.}sum"
+        _computed_hash="$($_hashcmd "$CCBROOT/cache/$archive")"
+        _computed_hash="${_computed_hash%% *}"
+        _stored_hash="$(while IFS= read -r line; do printf "$line"; done <"$_i")"
+        test "$_computed_hash" = "$_stored_hash" && return
+        printf "${_hashcmd}: ${archive}: Hash mismatch or compute failure\n" >&2
+        return 1
     done
 }
 
 # get a timestamp
 get_timestamp() {
-    test "$has_ns" = "y" && eval "${1:+$1_}time=\"$(date +%s.%N)\"" && return
-    eval "${1:+$1_}time=\"$(date +%s)\""
+    unset _time _sec _ms
+    test "$has_ns" = "y" || { printf "$(date +%s)"; return; }
+    _time="$(date +%s.%N)"
+    _sec="${_time%%.*}"
+    _ms="${_time##*.}"
+    _ms="${_ms%"${_ms#???}"}"
+    printf "$_sec.$_ms"
 }
 
-# get the difference between two timestamps
+# compare timestamps
 diff_timestamp() {
-    unset ts_diff ts_diff_sec ts_diff_ms
-    ts_diff="$(printf "$2 - $1\n" | bc -ql)"
-    ts_diff="${ts_diff#-}"
-    ts_diff="${ts_diff%.}"
-
-    : "${ts_diff_sec:=${ts_diff%%.*}}"
-    : "${ts_diff_sec:=0}"
-    test "$ts_diff" = "$ts_diff_sec" && printf "$ts_diff_sec" && return
-
-    ts_diff_ms="${ts_diff##*.}"
-    ts_diff_ms="${ts_diff_ms%"${ts_diff_ms#???}"}"
-    printf "$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}"
+    unset _ts _sec _ms
+    _ts="$(printf "${2:+$2 - $1 - }0\n" | bc -ql)"
+    _sec="${_ts%%.*}"
+    _ms="${_ts##*.}"
+    _ms="${_ms%"${_ms#???}"}"
+    printf "${_sec:-0}${_ms:+.$_ms}"
 }
 
 # format a timestamp string
 fmt_timestamp() {
-    unset time seconds miliseconds years months weeks days hours minutes
-    time="${1:-0}"
-    seconds="${time%%.*}"
-    miliseconds="${time##$seconds}"
-    miliseconds="${miliseconds#.}"
+    unset _time _days _hours _minutes _seconds _miliseconds
+    _time="${1:-0}"
+    _seconds="${_time%%.*}"
+    _miliseconds="${_time##$_seconds}"
+    _miliseconds="${_miliseconds#.}"
     daysuffix="$(if str_match "$time_fmt" 's'; then printf "d"; else printf " days"; fi)"
     hoursuffix="$(if str_match "$time_fmt" 's'; then printf "h"; else printf " hours"; fi)"
     minutesuffix="$(if str_match "$time_fmt" 's'; then printf "m"; else printf " minutes"; fi)"
     secondsuffix="$(if str_match "$time_fmt" 's'; then printf "s"; else printf " seconds"; fi)"
 
-    while [ "$seconds" -ge 86400 ]; do seconds="$((seconds-86400))"; days="$((days+1))"; done
-    test "$days" -ne 1 >&- 2>&- || daysuffix="${daysuffix%s}"
-    while [ "$seconds" -ge 3600 ]; do seconds="$((seconds-3600))"; hours="$((hours+1))"; done
-    test "$hours" -ne 1 >&- 2>&- || hoursuffix="${hoursuffix%s}"
-    while [ "$seconds" -ge 60 ]; do seconds="$((seconds-60))"; minutes="$((minutes+1))"; done
-    test "$minutes" -ne 1 >&- 2>&- || minutesuffix="${minutesuffix%s}"
-    test "$seconds" -ne 1 >&- 2>&- || test -n "$miliseconds" || test "$secondprefix" = "s" || secondsuffix="${secondsuffix%s}"
-    test "$seconds" -lt 1 >&- 2>&- && secondsuffix="s"
-    printf "${days:+$days$daysuffix, }${hours:+$hours$hoursuffix, }${minutes:+$minutes$minutesuffix, }$seconds${miliseconds:+.$miliseconds}$secondsuffix\n"
+    while [ "$_seconds" -ge 86400 ]; do _seconds="$((_seconds-86400))"; _days="$((_days+1))"; done
+    test "$_days" -ne 1 >&- 2>&- || daysuffix="${daysuffix%s}"
+    while [ "$_seconds" -ge 3600 ]; do _seconds="$((_seconds-3600))"; _hours="$((_hours+1))"; done
+    test "$_hours" -ne 1 >&- 2>&- || hoursuffix="${hoursuffix%s}"
+    while [ "$_seconds" -ge 60 ]; do _seconds="$((_seconds-60))"; _minutes="$((_minutes+1))"; done
+    test "$_minutes" -ne 1 >&- 2>&- || minutesuffix="${minutesuffix%s}"
+    test "$_seconds" -ne 1 >&- 2>&- || test -n "$_miliseconds" || test "$_secondprefix" = "s" || secondsuffix="${secondsuffix%s}"
+    test "$_seconds" -lt 1 >&- 2>&- && secondsuffix="s"
+    printf "${_days:+$_days$daysuffix, }${_hours:+$_hours$hoursuffix, }${_minutes:+$_minutes$minutesuffix, }$_seconds${_miliseconds:+.$_miliseconds}$secondsuffix\n"
 }
 
 # gaaabag been
@@ -277,7 +232,6 @@ run() {
         if str_match "${cmd##*/}" 'make|configure|wget|aria2c|patch'; then suf=">/dev/null"; else unset suf; fi
     test -n "$log_file" && \
         if str_match "${cmd##*/}" 'rm|tar'; then suf=">/dev/null 2>>'$log_file'"; else suf="${suf:+$suf }>>'$log_file' 2>&1"; fi
-
     test -z "$log_file" && suf="${suf:+$suf }2>&1"
     test "$verbosity" = "silent" -a -n "$log_file" && suf=">/dev/null 2>&1"
     test -n "$log_file" -a "$printcd" = "y" && printf "CHANGE_DIRECTORY: $*\n" >>"$log_file"
