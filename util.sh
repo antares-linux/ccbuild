@@ -18,8 +18,8 @@ _unset() {
         return
     }
     alias unset="_unset"
-    for i in "$@"; do
-        eval "$i=\"\""
+    for _i in "$@"; do
+        eval "$_i=\"\""
     done
 }
 
@@ -73,9 +73,9 @@ has_command() {
 
 # cry if a command is not installed
 needs_command() {
-    for i in "$@"; do
-        has_command "$i" && continue
-        error "$i: command not found" 3
+    for _i in "$@"; do
+        has_command "$_i" && continue
+        error "$_i: command not found" 3
     done
 }
 
@@ -83,9 +83,9 @@ needs_command() {
 str_match() {
     _str="$1"
     shift
-    for i in "$@"; do
+    for _i in "$@"; do
         set -f
-        eval "case \"$_str\" in $i) set +f; return 0 ;; esac"
+        eval "case \"$_str\" in $_i) set +f; return 0 ;; esac"
         set +f
     done
     return 1
@@ -100,8 +100,8 @@ printstatus() {
 
 # print a list of the non-symbolic files in ./arch/ (kinda useful)
 list_targets() {
-    for i in "$CCBROOT"/arch/*.conf; do
-        test -L "$i" && continue
+    for _i in "$CCBROOT"/arch/*.conf; do
+        test -L "$_i" && continue
         i="${i%%.conf}"
         printf "${i##*/} "
     done
@@ -152,8 +152,8 @@ def_pkg() {
     archive="${5:-${3##*/}}"
     eval "pkg_${name}_archive=\"$archive\""
 
-    for i in "$CCBROOT/patches/${name}" "$CCBROOT/patches/${name}/${version}" "$CCBROOT/patches/${name}-${version}"; do
-        [ -d "$i" ] && patchpaths="${patchpaths:+$patchpaths }$i"
+    for _i in "$CCBROOT/patches/${name}" "$CCBROOT/patches/${name}/${version}" "$CCBROOT/patches/${name}-${version}"; do
+        [ -d "$_i" ] && patchpaths="${patchpaths:+$patchpaths }$_i"
     done
     eval "pkg_${name}_patchpaths=\"$patchpaths\""
 }
@@ -168,11 +168,11 @@ get_pkg() {
     eval "printstatus \"Downloading \${pkg_${1}_link##*/}\""
     test "$timestamping" = "y" && get_timestamp current_download_start
 
-    for i in "aria2c -s \"$JOBS\" -j \"$JOBS\" -o \"$archive\" \"$link\"" \
+    for _i in "aria2c -s \"$JOBS\" -j \"$JOBS\" -o \"$archive\" \"$link\"" \
              "curl -fL# -o \"$archive\" \"$link\"" \
              "wget -O \"$archive\" \"$link\"" \
              "lynx -dump \"$link\" > \"$archive\""
-        do has_command "${i%% *}" && eval "run $i" && break
+        do has_command "${i%% *}" && eval "run $_i" && break
     done
     check_hash "$1" && eval "pkg_${name}_verified=y"
 
@@ -195,12 +195,12 @@ prep_pkg() {
 
     test -n "$patchpaths" || { cd ..; return; }
     printstatus "Patching $name-$version"
-    for i in $patchpaths; do
-        test -d "$i" && for j in $i/*.patch $i/*.diff; do
-            [ -r "$j" ] && run patch -p0 -i "$j"
+    for _i in $patchpaths; do
+        test -d "$_i" && for _j in $_i/*.patch $_i/*.diff; do
+            [ -r "$_j" ] && run patch -p0 -i "$_j"
         done
-        test -d "$i/$CPU_NAME" && for k in $i/*.patch $i/*.diff; do
-            [ -r "$k" ] && run patch -p0 -i "$k"
+        test -d "$_i/$CPU_NAME" && for _k in $_i/*.patch $_i/*.diff; do
+            [ -r "$_k" ] && run patch -p0 -i "$_k"
         done
     done
     cd ..
@@ -211,12 +211,12 @@ check_hash() {
     unset hashcmd computed_hash stored_hash
     read_pkg "$1"
     printstatus "Hashing $archive"
-    for i in "$CCBROOT"/hashes/${name}/${archive}.*; do
+    for _i in "$CCBROOT"/hashes/${name}/${archive}.*; do
         has_command "${i##*/${archive}.}sum" || continue
         hashcmd="${i##*/${archive}.}sum"
         computed_hash="$($hashcmd "$CCBROOT/cache/$archive")"
         computed_hash="${computed_hash%% *}"
-        stored_hash="$(while IFS= read -r line; do printf "$line"; done <"$i")"
+        stored_hash="$(while IFS= read -r line; do printf "$line"; done <"$_i")"
         test "$computed_hash" = "$stored_hash" || error "${hashcmd}: ${archive}: Hash mismatch or compute failure"
         break
     done
