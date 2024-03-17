@@ -287,7 +287,7 @@ run "../$pkg_binutils_dirname/configure" \
     --libexecdir="/lib" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
-    --with-pkgversion="ccbuild-musl" \
+    --with-pkgversion="$bname" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
     --enable-static-pie \
