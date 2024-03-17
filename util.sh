@@ -1,160 +1,158 @@
 #!/bin/sh
 
+# vi: ts=4 sw=4 sts=4 et
+
 # Copyright (C) 2024 Andrew Blue <andy@antareslinux.org>
-#
 # Distributed under the terms of the ISC license.
 # See the LICENSE file for more information.
 
-# print the help message
+# garbage bin file
+
+# a few shells don't have this; in our case, variables just need to be emptied
+# rather than undefined so this backup fills that role
+_unset() {
+    unalias unset
+    has_command unset && {
+        unset "$@"
+        alias unset="_unset"
+        return
+    }
+    alias unset="_unset"
+    for i in "$@"; do
+        eval "$i=\"\""
+    done
+}
+
+alias unset="_unset"
+
+# help message
 print_help() {
-    printf -- "Usage: $0 [OPTIONS]... [TARGET]
+    printf "\
+Usage: $0 [OPTIONS]... [TARGET]
 
 Options:
-      --allow-root          allow the script to be run with root privileges
-      --checkhash           verify hashes of downloaded packages (default)
-      --no-checkhash        don't verify hashes of downloaded packages
       --clean               remove all cached tarballs, builds, and logs
-  -C, --cleanup             clean up unpacked sources for the current build
-      --no-cleanup          don't clean up sources for the current build
-  -c, --cmdline             print relevant commands as they are processed
-      --no-cmdline          don't print relevant commands as they are processed
-      --enable-PACKAGE      enable (acquire and build) PACKAGE
-      --disable-PACKAGE     disable (don't acquire and build) PACKAGE
+  -c, --cmdline             print commands as they are processed
+  +c, --no-cmdline          don't print commands as they are processed
+  -C, --cleanup             clean \$bdir/src when the build ends
+  +C, --no-cleanup          don't clean \$bdir/src when the build ends
+      --enable-FEATURE      enable (acquire and build) FEATURE
+      --disable-FEATURE     disable (don't acquire and build) FEATURE
   -h, --help                print this message
   -j, --jobs=JOBS           concurrent job/task count
-  -l, --log                 log build information to ccbuild.log
-      --no-log              don't log build information to ccbuild.log (default)
-  -n, --name=NAME           name of the build (default: ccb-TARGET)
+  -l, --log[=FILE]          log compiler output in FILE or ccbuild.log
+  +l, --no-log              don't log compiler output in FILE or ccbuild.log
+  -n, --name=NAME           name of the build (default: ccb-CPU_NAME)
   -q, --quieter             reduce output if printing to a terminal
   -s, --silent              completely disable output if printing to a terminal
       --shell               spawn a subshell when the build finishes
-      --targets             print a list of available targets and exit (default)
-  -t, --timestamping        enable timestamping
-      --no-timestamping     don't enable timestamping (default)
-  -v, --verbose             enable all terminal output (default)
+      --targets             print a list of available targets and exit
+      --time-fmt=CHAR       whether to use 'l'ong or 's'hort time units
+  -v, --verbose             enable all command output (default)
 
-Packages:
-   'atomic',
-   'backtrace',
-   'cxx',
-   'ffi',
-   'fortran',
-   'itm',
-   'lto',
-   'openmp',
-   'phobos',
-   'pkgconf',
-   'quadmath',
-   'ssp',
-   'vtv'
-"
+Features:
+  'atomic',\n  'backtrace',\n  'cxx',\n  'ffi',\n  'fortran',\n  'itm',
+  'lto',\n  'openmp',\n  'phobos',\n  'quadmath',\n  'ssp',\n  'vtv'\n"
 }
 
-# ensure a provided command is installed
-require_command() {
-    # if it's a script, we're good
-    [ -x "$1" ] && return 0
+# exit and print an error
+error() {
+    printf "${0##*/}: error: %s\n" "$1" >&2
+    exit "${2:-1}"
+}
 
-    # check if it's a builtin/alias/$PATH binary
-    command -v "$1" >/dev/null 2>&1 || {
-        printf -- "${0##*/}: $1: command not found\n" >&2
-        exit 3
-    }
+# check if a command is installed
+has_command() {
+    while [ "$#" -gt 0 ]; do
+        test -x "$1" && shift && continue
+        command -v "$1" >/dev/null 2>&1 || return 1
+        shift
+    done
+    return 0
+}
+
+# cry if a command is not installed
+needs_command() {
+    for i in "$@"; do
+        has_command "$i" && continue
+        error "$i: command not found" 3
+    done
+}
+
+# case statement wrapper
+str_match() {
+    _str="$1"
+    shift
+    for i in "$@"; do
+        set -f
+        eval "case \"$_str\" in $i) set +f; return 0 ;; esac"
+        set +f
+    done
+    return 1
 }
 
 # print status messages
 printstatus() {
-    [ "$printcmdline" != "y" ] && {
-        [ "$verbosity" = "normal" ] && [ -n "$buildlog" ] && printf -- "%s\n" "$1" >&2
-        [ "$verbosity" = "quieter" ] && printf -- "%s\n" "$1" >&2
-    }
+    test "$log_commands" = "y" && return
+    test "$verbosity" = "normal" -a -n "$log_file" && printf "%s\n" "$1" >&2
+    test "$verbosity" = "quieter" && printf "%s\n" "$1" >&2
 }
 
 # print a list of the non-symbolic files in ./arch/ (kinda useful)
 list_targets() {
     for i in "$CCBROOT"/arch/*.conf; do
-        [ -L "$i" ] || {
-            i="${i%%.conf}"
-            arches="${arches:+$arches }${i##*/}"
-        }
+        test -L "$i" && continue
+        i="${i%%.conf}"
+        printf "${i##*/} "
     done
-    printf -- "$arches\n"
+    printf "\n"
+}
+
+# exit by ending the build
+ccb_exit() {
+    run cd "$bdir"
+    test "$spawn_shell" = "y" && HISTFILE="$CCBROOT/shell_history.txt" eval "${SHELL:-/bin/sh}"
+    test -d "$bdir/_tmp" && run rm -rf "$bdir/_tmp"
+    test -d "$bdir/src"  && test "$clean_src" = "y" && run rm -rf "$bdir/src"
+    test "$timestamping" = "y" && get_timestamp end
+    printf "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})" >&2
+    test -n "$end_time"      && printf " in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))" >&2
+    test -n "$download_time" && printf " ($(fmt_timestamp "$download_time") spent downloading)" >&2
+    printf "\n" >&2
+    exit
 }
 
 # read package vars
 read_pkg() {
-    # initialize these
-    unset name version link dirname checksum patchpaths
-
-    # read package info
-    [ -n "$1" ] && {
-        eval "[ -n \"\$pkg_${1}_name\" ]" && {
-            eval "name=\"\$pkg_${1}_name\""
-            eval "version=\"\$pkg_${1}_version\""
-            eval "link=\"\$pkg_${1}_link\""
-            eval "checksum=\"\$pkg_${1}_checksum\""
-            eval "dirname=\"\$pkg_${1}_dirname\""
-            eval "patchpaths=\"\$pkg_${1}_patchpaths\""
-        } || {
-            printf -- "${0##*/}: error: read_pkg: Package $1 has not been defined\n" >&2
-            exit 1
-        }
-    } || {
-        printf -- "${0##*/}: error: read_pkg: No package name specified\n" >&2
-        exit 1
-    }
+    unset name version link archive dirname patchpaths
+    test -n "$1" || error "read_pkg: No package name specified"
+    eval "test -n \"\$pkg_${1}_name\"" || error "read_pkg: Package $1 has not been defined"
+    eval "name=\"\$pkg_${1}_name\""
+    eval "version=\"\$pkg_${1}_version\""
+    eval "link=\"\$pkg_${1}_link\""
+    eval "archive=\"\$pkg_${1}_archive\""
+    eval "dirname=\"\$pkg_${1}_dirname\""
+    eval "patchpaths=\"\$pkg_${1}_patchpaths\""
 }
 
 # set variabless containing info about a package
-# name, version, link, dirname, checksum
 def_pkg() {
-    # require these commands
-    require_command sed
+    unset name version link archive dirname patchpaths
+    test -z "$1" && error "def_pkg: No package name specified"
 
-    # initialize these
-    unset name version link checksum dirname patchpaths
-
-    # set the package name
-    [ -n "$1" ] && {
-        name="$1"
-        eval "pkg_${name}_name=\"$name\""
-    } || {
-        printf -- "${0##*/}: error: def_pkg: No package name specified\n" >&2
-        exit 1
-    }
-
-    # set the version
-    [ -n "$2" ] && {
-        version="$2"
-        eval "pkg_${name}_version=\"$version\""
-    }
-
-    # set the package link
-    [ -n "$3" ] && {
-        link="$(printf -- "$3" | sed -e "s/#:ver:#/$version/g")"
-        eval "pkg_${name}_link=\"$link\""
-        eval "pkg_${name}_archive=\"${link##*/}\""
-    } || {
-        printf -- "${0##*/}: error: def_pkg: No package link specified\n" >&2
-        exit 1
-    }
-
-    # set the package checksum
-    [ -n "$4" ] && {
-        checksum="$4"
-        eval "pkg_${name}_checksum=\"$checksum\""
-    }
-
-    # set the package dirname, if the default should be overridden
-    [ -n "$5" ] && {
-        dirname="$(printf -- "$5" | sed -e "s/#:ver:#/$version/g")"
-    } || {
-        dirname="$name-$version"
-    }
+    name="$1"
+    eval "pkg_${name}_name=\"$name\""
+    version="$2"
+    eval "pkg_${name}_version=\"$version\""
+    test -z "$3" && error "def_pkg: No package link specified"
+    link="$3"
+    eval "pkg_${name}_link=\"$link\""
+    dirname="${4:-${name}-${version}}"
     eval "pkg_${name}_dirname=\"$dirname\""
+    archive="${5:-${3##*/}}"
+    eval "pkg_${name}_archive=\"$archive\""
 
-    # set the directories to check for patches
-    for i in "$CCBROOT/patches/${name:-placeholder_name}" "$CCBROOT/patches/${name:-placeholder_name}/$version" "$CCBROOT/patches/${name:-placeholder_name}-$version"; do
+    for i in "$CCBROOT/patches/${name}" "$CCBROOT/patches/${name}/${version}" "$CCBROOT/patches/${name}-${version}"; do
         [ -d "$i" ] && patchpaths="${patchpaths:+$patchpaths }$i"
     done
     eval "pkg_${name}_patchpaths=\"$patchpaths\""
@@ -162,350 +160,129 @@ def_pkg() {
 
 # download a package
 get_pkg() {
-    # initialize these
-    unset gcmd dl_start_time dl_start_sec dl_start_ms dl_end_time dl_end_sec dl_end_ms dl_time
+    unset name version link archive dirname patchpaths
+    unset current_download_start_time current_download_end_time current_download_time
 
-    # read package info
     read_pkg "$1"
-
-    # exit if the package is downloaded
-    [ -r "${link##*/}" ] && return 0
-
-    # decide which download command to use
-    for i in lynx w3m rsync wget curl aria2c; do
-        command -v "$i" >/dev/null 2>&1 && gcmd="$i"
-    done
-
-    # print a status message
+    test -r "$archive" && return 0
     eval "printstatus \"Downloading \${pkg_${1}_link##*/}\""
+    test "$timestamping" = "y" && get_timestamp current_download_start
 
-    # get the time before a download starts
-    [ "$timestamping" = "y" ] && {
-        get_timestamp dl_start
-    }
+    for i in "aria2c -s \"$JOBS\" -j \"$JOBS\" -o \"$archive\" \"$link\"" \
+             "curl -fL# -o \"$archive\" \"$link\"" \
+             "wget -O \"$archive\" \"$link\"" \
+             "lynx -dump \"$link\" > \"$archive\""
+        do has_command "${i%% *}" && eval "run $i" && break
+    done
+    check_hash "$1" && eval "pkg_${name}_verified=y"
 
-    # download the tarball with lynx
-    #[ "$gcmd" = "lynx" ] && run lynx
-
-    # download the tarball with w3m
-    #[ "$gcmd" = "w3m" ] && run w3m
-
-    # download the tarball with rsync
-    #[ "$gcmd" = "rsync" ] && run rsync
-
-    # download the tarball with aria2c
-    [ "$gcmd" = "aria2c" ] && run aria2c -s "$JOBS" -j "$JOBS" -o "${link##*/}" "$link"
-
-    # download the tarball with curl
-    [ "$gcmd" = "curl" ] && run curl -fL# -o "${link##*/}" "$link"
-
-    # download the tarball with wget
-    [ "$gcmd" = "wget" ] && run wget -O "${link##*/}" "$link"
-
-    # get the time before a download starts
-    [ "$timestamping" = "y" ] && {
-        # get the time at the end of the download and the time it took
-        get_timestamp dl_end
-        dl_time="$(diff_timestamp "$dl_start_time" "$dl_end_time")"
-
-        # add to the total amount of time spent downloading
-        download_time="$(printf -- "${download_time:+$download_time + }$dl_time\n" | bc -ql)"
-        [ -z "$(printf -- "$download_time" | awk -F. '{print $1}')" ] && download_time="0$download_time"
-    }
-
-    # verify the hash of the tarball
-    [ "$verify_hash" = "y" ] && {
-        check_hash "${link##*/}" "$checksum"
-    }
-
-    # prevent the hash checking function from being run again on this package
-    eval "pkg_${name}_verified=y"
+    test "$timestamping" != "y" && return
+    get_timestamp current_download_end
+    current_download_time="$(diff_timestamp "$current_download_start_time" "$current_download_end_time")"
+    download_time="$(printf "${download_time:+$download_time + }$current_download_time\n" | bc -ql)"
+    test -z "${download_time%%.*}" && download_time="0$download_time"
 }
 
 # prepare and patch a package for building
 prep_pkg() {
-    # read package info
     read_pkg "$1"
-
-    # check if the package is downloaded
-    [ -r "$CCBROOT/cache/${link##*/}" ] || {
-        printf -- "${0##*/}: error: prep_pkg: Package not downloaded\n" >&2
-        exit 1
-    }
-
-    # decide if we need to re-check the tarball's hash
-    eval "[ \"\$pkg_${name}_verified\" = y ]" || {
-        check_hash "$CCBROOT/cache/${link##*/}" "$checksum"
-        eval "pkg_${name}_verified=y"
-    }
-
-    # print a status message
-    printstatus "Opening ${link##*/}"
-
-    # unpack the tarball
-    run tar -xpf "$CCBROOT/cache/${link##*/}"
-
-    # check if the dir exists
+    [ -r "$CCBROOT/cache/$archive" ] || error "prep_pkg: $name: Package not downloaded"
+    eval "test \"pkg_${name}_verified\" != \"y\"" && check_hash "$1"
+    printstatus "Opening $archive"
+    run tar -xpf "$CCBROOT/cache/$archive"
     run test -d "$dirname"
-
-    # cd to the dir
     cd "$dirname"
 
-    # check if there are patches for this package
-    [ -n "$patchpaths" ] && {
-        printstatus "Patching $name-$version"
-        for i in $patchpaths; do
-            [ -d "$i" ] && {
-                for j in $i/*.patch $i/*.diff; do
-                    [ -r "$j" ] && run patch -p0 -i "$j"
-                done
-            }
-            [ -d "$i/$CPU_NAME" ] && {
-                for k in $i/*.patch $i/*.diff; do
-                    [ -r "$k" ] && run patch -p0 -i "$k"
-                done
-            }
+    test -n "$patchpaths" || { cd ..; return; }
+    printstatus "Patching $name-$version"
+    for i in $patchpaths; do
+        test -d "$i" && for j in $i/*.patch $i/*.diff; do
+            [ -r "$j" ] && run patch -p0 -i "$j"
         done
-    }
-
-    # cd to the parent directory
+        test -d "$i/$CPU_NAME" && for k in $i/*.patch $i/*.diff; do
+            [ -r "$k" ] && run patch -p0 -i "$k"
+        done
+    done
     cd ..
 }
 
-# compute md5/sha1/sha224/sha256/sha384/sha512 hashes and check if they match the hash provided
+# check hashes for downloaded files
 check_hash() {
-    # require awk
-    require_command awk
-
-    # check if the specified file exists
-    [ -r "$1" ] || {
-        printf -- "${0##*/}: error: $1: No such file or directory\n" >&2
-        exit 1
-    }
-
-    # print a status message
-    printstatus "Hashing ${1##*/}"
-
-    # guess the type of hash based on its length
-    case "$(printf -- "$2" | wc -c)" in
-           0) return 0 ;;
-
-          32) run test "$(md5sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
-
-          40) run test "$(sha1sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
-
-          56) run test "$(sha224sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
-
-          64) run test "$(sha256sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
-
-          96) run test "$(sha384sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
-
-         128) run test "$(sha512sum "$1" | awk '{print $1}')" = "$2"; ec="$?"
-              [ "$ec" -gt 0 ] && printf -- "check_hash: error: $1: Hash mismatch or compute failure\n"; return "$ec" ;;
-
-           *) return 1;
-     esac
+    unset hashcmd computed_hash stored_hash
+    read_pkg "$1"
+    printstatus "Hashing $archive"
+    for i in "$CCBROOT"/hashes/${name}/${archive}.*; do
+        has_command "${i##*/${archive}.}sum" || continue
+        hashcmd="${i##*/${archive}.}sum"
+        computed_hash="$($hashcmd "$CCBROOT/cache/$archive")"
+        computed_hash="${computed_hash%% *}"
+        stored_hash="$(while IFS= read -r line; do printf "$line"; done <"$i")"
+        test "$computed_hash" = "$stored_hash" || error "${hashcmd}: ${archive}: Hash mismatch or compute failure"
+        break
+    done
 }
 
 # get a timestamp
 get_timestamp() {
-    # initialize these
-    unset time
-
-    # store time
-    [ "$has_ns" = "y" ] && {
-        time="$(date +%s.%N)"
-        eval "${1:+$1_}sec=\"$(printf -- "$time" | awk -F. '{print $1}')\""
-        eval "${1:+$1_}ms=\"$(printf -- "$time" | awk -F. '{print $2}' | head -c3)\""
-        eval "${1:+$1_}time=\"$time\""
-    } || {
-        time="$(date +%s)"
-        eval "${1:+$1_}time=\"$time\""
-    }
+    test "$has_ns" = "y" && eval "${1:+$1_}time=\"$(date +%s.%N)\"" && return
+    eval "${1:+$1_}time=\"$(date +%s)\""
 }
 
 # get the difference between two timestamps
 diff_timestamp() {
-    # initialize these
     unset ts_diff ts_diff_sec ts_diff_ms
-
-    # required cmds
-    require_command bc awk head
-
-    # pipe args into bc
-    ts_diff="$(printf -- "$2 - $1\n" | bc -ql)"
+    ts_diff="$(printf "$2 - $1\n" | bc -ql)"
     ts_diff="${ts_diff#-}"
-    #ts_diff="$(printf -- "$ts_diff + 100000000\n" | bc -ql)"
+    ts_diff="${ts_diff%.}"
 
-    # get seconds
-    ts_diff_sec="$(printf -- "$ts_diff" | awk -F. '{print $1}')"
-    ts_diff_sec="${ts_diff_sec:-0}"
+    : "${ts_diff_sec:=${ts_diff%%.*}}"
+    : "${ts_diff_sec:=0}"
+    test "$ts_diff" = "$ts_diff_sec" && printf "$ts_diff_sec" && return
 
-    # get ms if possible
-    ts_diff_ms="$(printf -- "${ts_diff##$ts_diff_sec}" | awk -F. '{print $2}' | head -c3)"
-
-    # print the time difference
-    printf -- "$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}"
+    ts_diff_ms="${ts_diff##*.}"
+    ts_diff_ms="${ts_diff_ms%"${ts_diff_ms#???}"}"
+    printf "$ts_diff_sec${ts_diff_ms:+.$ts_diff_ms}"
 }
 
 # format a timestamp string
 fmt_timestamp() {
-    # initialize these
     unset time seconds miliseconds years months weeks days hours minutes
-
-    # store time
     time="${1:-0}"
-    seconds="$(printf -- "$time" | awk -F. '{print $1}')"
-    miliseconds="$(printf -- "${time##$seconds}" | awk -F. '{print $2}' | head -c3)"
+    seconds="${time%%.*}"
+    miliseconds="${time##$seconds}"
+    miliseconds="${miliseconds#.}"
+    daysuffix="$(if str_match "$time_fmt" 's'; then printf "d"; else printf " days"; fi)"
+    hoursuffix="$(if str_match "$time_fmt" 's'; then printf "h"; else printf " hours"; fi)"
+    minutesuffix="$(if str_match "$time_fmt" 's'; then printf "m"; else printf " minutes"; fi)"
+    secondsuffix="$(if str_match "$time_fmt" 's'; then printf "s"; else printf " seconds"; fi)"
 
-    # format suffixes
-    [ "$unitsize" = "s" ] && {
-        yearsuffix="y"
-        monthsuffix="m"
-        weeksuffix="w"
-        daysuffix="d"
-        hoursuffix="h"
-        minutesuffix="m"
-        secondsuffix="s"
-    } || {
-        yearsuffix=" years"
-        monthsuffix=" months"
-        weeksuffix=" weeks"
-        daysuffix=" days"
-        hoursuffix=" hours"
-        minutesuffix=" minutes"
-        secondsuffix=" seconds"
-    }
-
-    # count the amount of years (lol)
-    while [ "$seconds" -ge 31557600 ]; do
-        seconds="$((seconds-31557600))"
-        years="$((years+1))"
-    done
-    [ "$years" -ne 1 >&- 2>&- ] || yearsuffix="${yearsuffix%s}"
-
-    # count the amount of months
-    while [ "$seconds" -ge 2628000 ]; do
-        seconds="$((seconds-2628000))"
-        months="$((months+1))"
-    done
-    [ "$months" -ne 1 >&- 2>&- ] || monthsuffix="${monthsuffix%s}"
-
-    # count the amount of weeks
-    while [ "$seconds" -ge 604800 ]; do
-        seconds="$((seconds-604800))"
-        weeks="$((weeks+1))"
-    done
-    [ "$weeks" -ne 1 >&- 2>&- ] || weeksuffix="${weeksuffix%s}"
-
-    # count the amount of days
-    while [ "$seconds" -ge 86400 ]; do
-        seconds="$((seconds-86400))"
-        days="$((days+1))"
-    done
-    [ "$days" -ne 1 >&- 2>&- ] || daysuffix="${daysuffix%s}"
-
-    # count the amount of hours
-    while [ "$seconds" -ge 3600 ]; do
-        seconds="$((seconds-3600))"
-        hours="$((hours+1))"
-    done
-    [ "$hours" -ne 1 >&- 2>&- ] || hoursuffix="${hoursuffix%s}"
-
-    # count the amount of minutes
-    while [ "$seconds" -ge 60 ]; do
-        seconds="$((seconds-60))"
-        minutes="$((minutes+1))"
-    done
-    [ "$minutes" -ne 1 >&- 2>&- ] || minutesuffix="${minutesuffix%s}"
-
-    # singular second prefix if miliseconds aren't counted
-    [ "$seconds" -ne 1 >&- 2>&- ] || [ -n "$miliseconds" ] || [ "$secondprefix" = "s" ] || secondsuffix="${secondsuffix%s}"
-
-    # if less than 1 second, use a short prefix
-    [ "$seconds" -lt 1 >&- 2>&- ] && {
-        secondsuffix="s"
-    }
-
-    # print the timestamp difference
-    printf -- "${years:+$years$yearsuffix, }${months:+$months$monthsuffix, }${weeks:+$weeks$weeksuffix, }${days:+$days$daysuffix, }${hours:+$hours$hoursuffix, }${minutes:+$minutes$minutesuffix, }$seconds${miliseconds:+.$miliseconds}$secondsuffix\n"
+    while [ "$seconds" -ge 86400 ]; do seconds="$((seconds-86400))"; days="$((days+1))"; done
+    test "$days" -ne 1 >&- 2>&- || daysuffix="${daysuffix%s}"
+    while [ "$seconds" -ge 3600 ]; do seconds="$((seconds-3600))"; hours="$((hours+1))"; done
+    test "$hours" -ne 1 >&- 2>&- || hoursuffix="${hoursuffix%s}"
+    while [ "$seconds" -ge 60 ]; do seconds="$((seconds-60))"; minutes="$((minutes+1))"; done
+    test "$minutes" -ne 1 >&- 2>&- || minutesuffix="${minutesuffix%s}"
+    test "$seconds" -ne 1 >&- 2>&- || test -n "$miliseconds" || test "$secondprefix" = "s" || secondsuffix="${secondsuffix%s}"
+    test "$seconds" -lt 1 >&- 2>&- && secondsuffix="s"
+    printf "${days:+$days$daysuffix, }${hours:+$hours$hoursuffix, }${minutes:+$minutes$minutesuffix, }$seconds${miliseconds:+.$miliseconds}$secondsuffix\n"
 }
 
-
-# wrapper function for running important commands: manages output content/redirection and argument parsing
-# slows down the script marginally, but I think it's useful enough to be worth it
+# gaaabag been
 run() {
-    # initialize these
-    unset cmd args suf printcd ec
+    unset cmd suf printcd ec
+    needs_command "$1" && cmd="$1" && shift
+    str_match "${cmd##*/}" 'mkdir|cp|ln|rm|curl|mv|tar' && suf="-v"
+    str_match "${cmd##*/}" 'cd|pushd|popd' && printcd="y"
+    test "$verbosity" = "quieter" -a -z "$log_file" && \
+        if str_match "${cmd##*/}" 'make|configure|wget|aria2c|patch'; then suf=">/dev/null"; else unset suf; fi
+    test -n "$log_file" && \
+        if str_match "${cmd##*/}" 'rm|tar'; then suf=">/dev/null 2>>'$log_file'"; else suf="${suf:+$suf }>>'$log_file' 2>&1"; fi
 
-    # store the command name
-    require_command "$1" && cmd="$1" && shift
-
-    # decide what flags to append to commands
-    case "${cmd##*/}" in
-        mkdir|cp|ln|rm|curl|mv|tar) suf="-v" ;;
-        cd|pushd|popd) printcd="y" ;;
-    esac
-
-    # commands print what they normally do
-    [ "$verbosity" = "quieter" ] && [ -z "$buildlog" ] && {
-        suf=""
-        case "${cmd##*/}" in
-            make|configure|wget|aria2c|patch) suf=">/dev/null" ;;
-        esac
-    }
-
-    # output handling
-    [ -n "$buildlog" ] && {
-        suf="${suf:+$suf }>>'$buildlog' 2>&1"
-
-        # don't write output of tar/rm, wastes over a dozen megabytes of disk space
-        # and is absolutely useless
-        case "${cmd##*/}" in
-            rm|tar) suf=">/dev/null 2>>'$buildlog'"
-        esac
-    } || {
-        suf="${suf:+$suf }2>&1"
-    }
-
-    # no-verbosity output handling
-    [ "$verbosity" = "silent" ] && {
-        [ -n "$buildlog" ] || {
-            suf=">/dev/null 2>&1"
-        }
-    }
-
-    # sanitize arguments with quotes
-    while [ "$#" -gt 0 ]; do
-        args="${args:+$args }'$1'"
-        shift
-    done
-
-    # run the command
-    [ -n "$buildlog" ] && {
-        [ "$printcd" = "y" ] && {
-            printf -- "CHANGE_DIRECTORY: $args\n" >>"$buildlog"
-        } || {
-            printf -- "COMMAND: $cmd $args\n" >>"$buildlog"
-        }
-    }
-    [ "$printcmdline" = "y" ] && printf -- "\033[90m\$\033[0m\033[3m $cmd $args\033[0m\n" >&2
-
-    # run the command and catch errors
-    eval "$cmd $args${suf:+ $suf}"
-    ec="$?"
-
-    # print an error msg and quit
-    [ "$ec" -gt 0 ] && {
-        printf -- "${0##*/}: error: failed at \`$cmd $args\`\n" >&2
-        exit "$ec"
-    }
-
-    # initialize these
-    unset cmd args suf
+    test -z "$log_file" && suf="${suf:+$suf }2>&1"
+    test "$verbosity" = "silent" -a -n "$log_file" && suf=">/dev/null 2>&1"
+    test -n "$log_file" -a "$printcd" = "y" && printf "CHANGE_DIRECTORY: $*\n" >>"$log_file"
+    test -n "$log_file" -a "$printcd" != "y" && printf "COMMAND: $cmd $*\n" >>"$log_file"
+    test "$log_commands" = "y" && printf "\033[90m\$\033[0m\033[3m $cmd $*\033[0m\n" >&2
+    eval "$cmd \"\$@\"${suf:+ $suf}"
+    test "${ec:=$?}" -gt "0" && error "failed at \`$cmd $*\`" "$ec"
 }

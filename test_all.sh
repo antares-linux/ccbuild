@@ -1,7 +1,8 @@
 #!/bin/sh
 
+# vi: ts=4 sw=4 sts=4 et
+
 # Copyright (C) 2024 Andrew Blue <andy@antareslinux.org>
-#
 # Distributed under the terms of the ISC license.
 # See the LICENSE file for more information.
 

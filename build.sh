@@ -1,251 +1,142 @@
 #!/bin/sh
 
+# vi: ts=4 sw=4 sts=4 et
+
 # Copyright (C) 2024 Andrew Blue <andy@antareslinux.org>
-#
 # Distributed under the terms of the ISC license.
 # See the LICENSE file for more information.
 
-# fields are separated by '/' so each dir/file in a path is operated on
+# don't mind the useless comments above self-explanatory lines; having them
+# there satisfies my OCD and it looks weird without them to me for some
+# reason...
+
+
+# this should be implied on all invocations
+alias printf="printf --"
+
+# fields are separated by '/' so each path element is operated on
 _IFS="$IFS"
 IFS="/"
 
-# cd to the cwd of the script
+# try to cd to the cwd of the script
+# only works if $0 is a path to build.sh, not a basename
 for i in $0; do
     [ -d "$i" ] && cd "$i"
 done
 
-# restore field separator & save script cwd
+# restore old field separator
 IFS="$_IFS"
+
+# save script cwd
 export CCBROOT="$PWD"
 
 # exit if ccbroot can't be set
 [ -n "$CCBROOT" ] || {
-    printf -- "${0##*/}: error: CCBROOT can't be set\n" >&2
+    printf "${0##*/}: error: CCBROOT can't be set\n" >&2
     exit 1
 }
 
 # exit if ccbroot isn't set correctly
 [ -r "$CCBROOT/${0##*/}" ] || {
-    printf -- "${0##*/}: error: CCBROOT set incorrectly\n" >&2
+    printf "${0##*/}: error: CCBROOT set incorrectly\n" >&2
     exit 1
 }
 
 # ensure util.sh exists
 [ -r "$CCBROOT/util.sh" ] || {
-    printf -- "${0##*/}: error: util.sh: No such file or directory\n" >&2
+    printf "${0##*/}: error: util.sh: No such file or directory\n" >&2
     exit 1
 }
 
-# load utility functions (these are separated for cleanliness)
+# load utility functions (these are separated so build.sh stays clean and simple)
 . "$CCBROOT/util.sh"
 
 # define packages
-def_pkg mpc "1.3.1" "http://ftpmirror.gnu.org/mpc/mpc-#:ver:#.tar.gz" "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8"
-def_pkg musl "1.2.5" "http://musl.libc.org/releases/musl-#:ver:#.tar.gz" "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4"
-def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-#:ver:#.tar.xz" "277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2"
-def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-#:ver:#.tar.xz" "a0b5cb06d24f9fa9e77b55fabbe9a3c94a336190345c2555f9915bb38e976504"
-def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-#:ver:#.tar.xz" "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
-def_pkg pkgconf "2.1.0" "http://distfiles.dereferenced.org/pkgconf/pkgconf-#:ver:#.tar.xz" "266d5861ee51c52bc710293a1d36622ae16d048d71ec56034a02eb9cf9677761"
-def_pkg binutils "2.42" "http://ftpmirror.gnu.org/binutils/binutils-#:ver:#.tar.xz" "f6e4d41fd5fc778b06b7891457b3620da5ecea1006c6a4a41ae998109f85a800"
-def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-#:ver:#/gcc-#:ver:#.tar.xz" "e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
+def_pkg mpc "1.3.1" "http://ftpmirror.gnu.org/mpc/mpc-\${version}.tar.gz"
+def_pkg musl "1.2.5" "http://musl.libc.org/releases/musl-\${version}.tar.gz"
+def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-\${version}.tar.xz"
+def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-\${version}.tar.xz"
+def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-\${version}.tar.xz"
+def_pkg binutils "2.42" "http://ftpmirror.gnu.org/binutils/binutils-\${version}.tar.xz"
+def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-\${version}/gcc-\${version}.tar.xz"
 
-# (internal, no opt for now)
-# use [l]ong or [s]hort suffixes for time units
-unitsize="l"
-
-# verify checksums
-verify_hash="y"
-
-# use libatomic
-#use_atomic="y"
-
-# use libbacktrace
-#use_backtrace="y"
-
-# use c++
-use_cxx="y"
-
-# use libffi
-#use_ffi="y"
-
-# use fortran
-#use_fortran="y"
-
-# use libgomp
-#use_gomp="y"
-
-# use libitm
-#use_itm="y"
-
-# use lto
-#use_lto="y"
-
-# use libphobos
-#use_phobos="y"
-
-# download and build pkgconf
-#use_pkgconf="y"
-
-# use libquadmath
-#use_quadmath="y"
-
-# use libssp
-#use_ssp="y"
-
-# use libvtv
-#use_vtv="y"
-
-# clean the build after it's finished
-build_post_cleanup="y"
-
-# print the command line to stdout
-#printcmdline="y"
-
-# shell/command to spawn the end of the build, but before post-build actions
-#spawn_shell="y"
-
-# do timestamping
-#timestamping="y"
-
-# by default, all output is printed; this will slow down the
-# script slightly but it's a requirement for debugging
-verbosity="normal"
 
 # ------------------------------------------------------------------------------
 
 # parse command-line arguments
 while [ "$#" -gt 0 ]; do
-    # case statement (lol useless comment but my OC wants one to be here)
     case "$1" in
-        # allow the root user to use ccbuild
-        --allow-root) allow_root="y"; shift ;;
-
-        # disable sha256 hash checking
-        --checkhash)    verify_hash="y"; shift ;;
-        --no-checkhash) unset verify_hash; shift ;;
-
-        # clean CCBROOT
-        --clean) full_clean="y"; shift ;;
-
-        # clean the build after it's finished
-        -C|--cleanup) build_post_cleanup="y"; shift ;;
-        --no-cleanup) unset build_post_cleanup; shift ;;
-
-        # print the command line to stdout
-        -c|--cmdline) printcmdline="y"; shift ;;
-        --no-cmdline) unset printcmdline; shift ;;
-
-        # libatomic support
-        --enable-atomic)  use_atomic="y"; shift ;;
-        --disable-atomic) unset use_atomic; shift ;;
-
-        # libbacktrace support
-        --enable-backtrace)  use_backtrace="y"; shift ;;
-        --disable-backtrace) unset use_backtrace; shift ;;
-
-        # c++ support (enabled by default)
-        --enable-c[xp+][xp+])  use_cxx="y"; shift ;;
-        --disable-c[xp+][xp+]) unset use_cxx; shift ;;
-
-        # libffi support
-        --enable-ffi)  use_ffi="y"; shift ;;
-        --disable-ffi) unset use_ffi; shift ;;
-
-        # fortran support
-        --enable-ft|--enable-fortran)   use_fortran="y" use_quadmath="y"; shift ;;
-        --disable-ft|--disable-fortran) unset use_fortran use_quadmath; shift ;;
-
-        # libgomp support
-        --enable-gomp|--enable-openmp)   use_gomp="y"; shift ;;
-        --disable-gomp|--disable-openmp) unset use_gomp; shift ;;
-
-        # libitm support
-        --enable-itm)  use_itm="y"; shift ;;
-        --disable-itm) unset use_itm; shift ;;
-
-        # lto support
-        --enable-lto)  use_lto="y"; shift ;;
-        --disable-lto) unset use_lto; shift ;;
-
-        # libphobos support
-        --enable-phobos)  use_phobos="y"; shift ;;
-        --disable-phobos) unset use_phobos; shift ;;
-
-        # whether to download and use pkgconf
-        --enable-pkgconf)  use_pkgconf="y"; shift ;;
-        --disable-pkgconf) unset use_pkgconf; shift ;;
-
-        # quadmath support
-        --enable-quadmath)  use_quadmath="y"; shift ;;
-        --disable-quadmath) unset use_quadmath; shift ;;
-
-        # libssp support
-        --enable-ssp)  use_ssp="y"; shift ;;
-        --disable-ssp) unset use_ssp; shift ;;
-
-        # libvtv support
-        --enable-vtv)  use_vtv="y"; shift ;;
-        --disable-vtv) unset use_vtv; shift ;;
-
-        # print help
-        -h|--help) print_help; exit ;;
-
-        # input a custom job number
-        -j|--jobs)            [ "$2" -le 1024 >&- 2>&- ] && jobs="$2"; shift 2 ;;
-        -j*)            [ "${1##-j}" -le 1024 >&- 2>&- ] && jobs="${1##-j}"; shift ;;
-        --jobs=*)  [ "${1##--jobs=}" -le 1024 >&- 2>&- ] && jobs="${1##--jobs=}"; shift ;;
-
-        # pipe compiler/configure script output to ccbuild.log
-        -l|--log) buildlog="$CCBROOT/ccbuild.log"; :>"$buildlog"; shift ;;
-        -l*)      buildlog="${1##-l}"; :>"$buildlog"; shift ;;
-        --log=*)  buildlog="${1##--log=}"; :>"$buildlog"; shift ;;
-        --no-log) unset buildlog; shift ;;
-
-        # specify a custom name for the build other than "ccb-ARCH.NUM"
-        -n|--name) bname="$2";            shift 2 ;;
-        -n*)       bname="${1##-n}";      shift ;;
-        --name=*)  bname="${1##--name=}"; shift ;;
-
-        # quieter, terse output (status msgs)
-        -q|--quieter) verbosity="quieter"; shift ;;
-
-        # completely silent
-        -s|--silent) verbosity="silent"; shift ;;
-
-        # spawn a shell under the script's environment after the build finishes
-        --shell) spawn_shell="y"; shift ;;
-        --no-shell) unset spawn_shell; shift ;;
-
-        # print a list of the available architectures and exit
-        --targets) list_targets; exit ;;
-
-        # timestamp the build process
-        -t|--timestamping) timestamping="y"; shift ;;
-
-        # don't timestamp the build process (default)
-        --no-timestamping) unset timestamping; shift ;;
-
-        # verbose (default) output
-        -v|--verbose) verbosity="normal"; shift ;;
-
-        # set the target name
-        *) [ -z "$target" ] && target="${1%%/}"; shift ;;
+        --clean)                rm -rf "$CCBROOT/build" "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"; exit $? ;;
+        -C|--cleanup)           clean_src="y"; shift ;;
+        +C|--no-cleanup)        clean_src="n"; shift ;;
+        -c|--cmdline)           log_commands="y"; shift ;;
+        +c|--no-cmdline)        log_commands="n"; shift ;;
+        --enable-atomic)        use_libatomic="y"; shift ;;
+        --disable-atomic)       use_libatomic="n"; shift ;;
+        --enable-backtrace)     use_libbacktrace="y"; shift ;;
+        --disable-backtrace)    use_libbacktrace="n"; shift ;;
+        --enable-c[xp+][xp+])   use_cxx="y"; shift ;;
+        --disable-c[xp+][xp+])  use_cxx="n"; shift ;;
+        --enable-ffi)           use_libffi="y"; shift ;;
+        --disable-ffi)          use_libffi="n"; shift ;;
+        --enable-fortran)       use_fortran="y" use_libquadmath="y"; shift ;;
+        --disable-fortran)      use_fortran="n"; test "$use_libquadmath_specified" = "y" || use_libquadmath="n"; shift ;;
+        --enable-openmp)        use_libgomp="y"; shift ;;
+        --disable-openmp)       use_libgomp="n"; shift ;;
+        --enable-itm)           use_libitm="y"; shift ;;
+        --disable-itm)          use_libitm="n"; shift ;;
+        --enable-lto)           use_lto="y"; shift ;;
+        --disable-lto)          use_lto="n"; shift ;;
+        --enable-phobos)        use_libphobos="y"; shift ;;
+        --disable-phobos)       use_libphobos="n"; shift ;;
+        --enable-quadmath)      use_libquadmath="y"; use_libquadmath_specified="y"; shift ;;
+        --disable-quadmath)     use_libquadmath="n"; shift ;;
+        --enable-ssp)           use_libssp="y"; shift ;;
+        --disable-ssp)          use_libssp="n"; shift ;;
+        --enable-vtv)           use_libvtv="y"; shift ;;
+        --disable-vtv)          use_libvtv="n"; shift ;;
+        -h|--help)              print_help; exit ;;
+        -j|--jobs)              test "$2" -le 1024 2>/dev/null            && jobs="$2"; shift 2 ;;
+        -j*)                    test "${1##-j}" -le 1024 2>/dev/null      && jobs="${1##-j}"; shift ;;
+        --jobs=*)               test "${1##--jobs=}" -le 1024 2>/dev/null && jobs="${1##--jobs=}"; shift ;;
+        -l|--log)               log_file="$CCBROOT/ccbuild.log"; :>"$log_file"; shift ;;
+        -l*)                    log_file="${1##-l}";             :>"$log_file"; shift ;;
+        --log=*)                log_file="${1##--log=}";         :>"$log_file"; shift ;;
+        +l|--no-log)            unset log_file; shift ;;
+        -n|--name)              bname="$2";            shift 2 ;;
+        -n*)                    bname="${1##-n}";      shift ;;
+        --name=*)               bname="${1##--name=}"; shift ;;
+        -q|--quieter)           verbosity="quieter"; shift ;;
+        -s|--silent)            verbosity="silent";  shift ;;
+        --shell)                spawn_shell="y"; shift ;;
+        --time-fmt)             str_match "$2" 'l' 's' && time_fmt="$2"; shift 2 ;;
+        --time-fmt=*)           str_match "${1##--ts-unit-fmt=}" 'l' 's' && time_fmt="${1##--ts-unit-fmt=}"; shift ;;
+        --targets)              list_targets; exit ;;
+        -v|--verbose)           verbosity="normal"; shift ;;
+        *)                      test -z "$target" && target="${1%%/}"; shift ;;
     esac
 done
 
-# warn the user about running as root
-[ "$allow_root" = "y" ] || {
-    [ "${EUID:-${UID:-$(id -u)}}" -ne 0 >/dev/null 2>&1 ] || {
-        printf -- "${0##*/}: error: Running this script with root privileges is not recommended. Run \`$0 --allow-root\` to allow this.\n" >&2
-        exit 1
-    }
-}
-
-# clean up the script root if desired
-[ "$full_clean" = "y" ] && {
-    run rm -rf "$CCBROOT/build" "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"
-    exit
-}
+# defaults for options
+: "${clean_src:=y}"
+: "${log_commands:=n}"
+: "${use_libatomic:=n}"
+: "${use_libbacktrace:=n}"
+: "${use_cxx:=y}"
+: "${use_libffi:=n}"
+: "${use_fortran:=n}"
+: "${use_libgomp:=n}"
+: "${use_libitm:=n}"
+: "${use_lto:=n}"
+: "${use_libphobos:=n}"
+: "${use_libquadmath:=n}"
+: "${use_libssp:=n}"
+: "${use_libvtv:=n}"
+: "${jobs:=1}"
+: "${spawn_shell:=n}"
+: "${time_fmt:=l}"
+: "${verbosity:=normal}"
+#: "${log_file:=$CCBROOT/ccbuild.log}"
 
 # export these variables
 set -a
@@ -254,31 +145,20 @@ set -a
 [ -r "$CCBROOT/arch/$target.conf" ] && {
     . "$CCBROOT/arch/$target.conf"
 } || {
-    [ -n "$target" ] && {
-        printf -- "${0##*/}: error: Invalid option or target $target\n" >&2
-        exit 1
-    } || {
-        printf -- "${0##*/}: error: No target specified. Run \`$0 --help\` for more information.\n" >&2
-        exit 1
-    }
+    [ -n "$target" ] && error "Invalid option or target $target"
+    error "No target specified. Run \`$0 --help\` for more information."
 }
 
 # set the build directory for a new toolchain
-[ -d "$CCBROOT/out/${bname:-ccb-$CPU_NAME}" ] && {
+[ -d "$CCBROOT/out/${bname:=ccb-$CPU_NAME}" ] && {
     i="2"
-    while [ -d "$CCBROOT/out/${bname:-ccb-$CPU_NAME}.$i" ]; do
+    while [ -d "$CCBROOT/out/$bname.$i" ]; do
         i="$((i+1))"
     done
-    bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}.$i"
+    bdir="$CCBROOT/out/$bname.$i"
 } || {
-    bdir="$CCBROOT/out/${bname:-ccb-$CPU_NAME}"
+    bdir="$CCBROOT/out/$bname"
 }
-
-# shell prompt
-PS1="\[\033[1;90m\]ccbuild*\[\033[0m\]$PS1"
-
-# get the host's target
-HOST="$(gcc -v 2>&1 | awk '/Target:/ {print $2}')"
 
 # environment variables
 CFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -303,18 +183,17 @@ set +a
 # Step 0: set up the environment
 # ------------------------------------------------------------------------------
 
-# semantic
-[ "$JOBS" -ne 1 ] && jsuf="threads" || jsuf="thread"
-
 # print the starting status message
-[ "$verbosity" != "silent" ] && printf -- "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $jsuf\n" >&2
+[ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $(str_match "$JOBS" '1' && printf "thread" || printf "threads")\n" >&2
 
-# timestamping setup
-[ "$timestamping" = "y" ] && {
+# check if we have thee commands needed for timestamping
+has_command date bc && {
+    timestamping="y"
+
     # check whether nanoseconds work
     [ "$(date +%N)" != '%N' ] && has_ns="y"
 
-    # get the beginning
+    # get the starting time for the build
     get_timestamp start
 }
 
@@ -332,9 +211,6 @@ get_pkg isl
 get_pkg gmp
 get_pkg binutils
 get_pkg gcc
-
-# optional
-[ "$use_pkgconf" = "y" ] && get_pkg pkgconf
 
 # print a status message that the dir structure for the toolchain is being made
 printstatus "Creating directory structure"
@@ -376,9 +252,6 @@ prep_pkg gmp
 prep_pkg binutils
 prep_pkg gcc
 
-# these as well
-[ "$use_pkgconf" = "y" ] && prep_pkg pkgconf
-
 
 # Step 1: install musl headers
 # ------------------------------------------------------------------------------
@@ -409,14 +282,13 @@ run "../$pkg_binutils_dirname/configure" \
     --libexecdir="/lib" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
-    --with-pkgversion="ccbuild $pkg_binutils_version-cross-musl" \
+    --with-pkgversion="ccbuild-musl" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
     --enable-static-pie \
     --enable-relro \
     --disable-bootstrap \
-    --disable-lto \
-    "${use_lto:+--enable-lto}" \
+    "$(if test "$use_lto" = "y"; then printf "--enable-lto"; else printf "--disable-lto"; fi)" \
     --disable-multilib \
     --disable-werror \
     --disable-linker-build-id \
@@ -493,7 +365,7 @@ run "../$pkg_gcc_dirname/configure" \
     --libexecdir="/lib" \
     --datarootdir="/_tmp" \
     --target="$TARGET" \
-    --with-pkgversion="ccbuild $pkg_gcc_version-cross-musl" \
+    --with-pkgversion="$bname" \
     --enable-languages="$GCCLANGS" \
     --enable-default-hash-style="sysv" \
     --enable-default-pie \
@@ -502,8 +374,7 @@ run "../$pkg_gcc_dirname/configure" \
     --enable-libstdcxx=time=rt \
     --enable-initfini-array \
     --disable-bootstrap \
-    --disable-lto \
-    "${use_lto:+--enable-lto}" \
+    "$(if test "$use_lto" = "y"; then printf "--enable-lto"; else printf "--disable-lto"; fi)" \
     --disable-multilib \
     --disable-werror \
     --disable-dependency-tracking \
@@ -688,7 +559,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_quadmath" = "y" ] && {
+[ "$use_libquadmath" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -725,7 +596,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_atomic" = "y" ] && {
+[ "$use_libatomic" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -754,7 +625,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_backtrace" = "y" ] && {
+[ "$use_libbacktrace" = "y" ] && {
     # configure libbacktrace
     printstatus "Configuring libbacktrace"
     run make \
@@ -780,7 +651,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_ffi" = "y" ] && {
+[ "$use_libffi" = "y" ] && {
     # configure libffi
     printstatus "Configuring libffi"
     run make \
@@ -840,7 +711,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_gomp" = "y" ] && {
+[ "$use_libgomp" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -869,7 +740,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_itm" = "y" ] && {
+[ "$use_libitm" = "y" ] && {
     # configure libitm
     printstatus "Configuring libitm"
     run make \
@@ -895,7 +766,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_phobos" = "y" ] && {
+[ "$use_libphobos" = "y" ] && {
     # configure libphobos
     printstatus "Configuring libphobos"
     run make \
@@ -921,7 +792,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_ssp" = "y" ] && {
+[ "$use_libssp" = "y" ] && {
     # configure libssp
     printstatus "Configuring libssp"
     run make \
@@ -947,7 +818,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_vtv" = "y" ] && {
+[ "$use_libvtv" = "y" ] && {
     # configure libvtv
     printstatus "Configuring libvtv"
     run make \
@@ -972,21 +843,4 @@ done
 # we're finished!
 # ------------------------------------------------------------------------------
 
-# cd to bdir
-run cd "$bdir"
-
-# give the user a shell if applicable
-[ -n "$spawn_shell" ] && HISTFILE="$CCBROOT/shell_history.txt" eval "${SHELL:-/bin/sh}"
-
-# remove junk
-run rm -rf "$bdir/_tmp"
-
-# delete all sources if desired
-[ "$build_post_cleanup" = "y" ] && run rm -rf "$bdir/src"
-
-# get the end timestamp
-[ "$timestamping" = "y" ] && {
-    get_timestamp end
-}
-
-printf -- "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})${end_time:+ in $(fmt_timestamp $(diff_timestamp "$start_time" "$end_time"))} ${download_time:+($(fmt_timestamp "$download_time") spent downloading)}\n" >&2
+ccb_exit
