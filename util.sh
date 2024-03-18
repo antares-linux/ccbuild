@@ -34,8 +34,8 @@ Options:
   -v, --verbose             enable all command output (default)
 
 Features:
-  'atomic',\n  'backtrace',\n  'cxx',\n  'ffi',\n  'fortran',\n  'itm',
-  'lto',\n  'openmp',\n  'phobos',\n  'quadmath',\n  'ssp',\n  'vtv'\n"
+  'atomic',\n  'cxx',\n  'ffi',\n  'fortran',\n  'itm',\n  'lto',\n  'openmp',
+  'phobos',\n  'quadmath',\n  'ssp',\n  'vtv'\n"
 }
 
 # exit and print an error
