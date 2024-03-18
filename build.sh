@@ -529,12 +529,6 @@ done
 [ "$use_cxx" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
-    printstatus "Configuring libstdc++-v3"
-
-    # configure libstdc++
-    run make \
-        $MAKEOPTS \
-        configure-target-libstdc++-v3
 
     # compile libstdc++
     printstatus "Compiling libstdc++-v3"
@@ -567,12 +561,6 @@ done
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
-    # configure libquadmath
-    printstatus "Configuring libquadmath"
-    run make \
-        $MAKEOPTS \
-        configure-target-libquadmath
-
     # compile libquadmath
     printstatus "Compiling libquadmath"
     run make \
@@ -604,12 +592,6 @@ done
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
-    # configure libatomic
-    printstatus "Configuring libatomic"
-    run make \
-        $MAKEOPTS \
-        configure-target-libatomic
-
     # compile libatomic
     printstatus "Compiling libatomic"
     run make \
@@ -630,12 +612,6 @@ done
 
 # don't build if not enabled
 [ "$use_libbacktrace" = "y" ] && {
-    # configure libbacktrace
-    printstatus "Configuring libbacktrace"
-    run make \
-        $MAKEOPTS \
-        configure-target-libbacktrace
-
     # compile libbacktrace
     printstatus "Compiling libbacktrace"
     run make \
@@ -656,12 +632,6 @@ done
 
 # don't build if not enabled
 [ "$use_libffi" = "y" ] && {
-    # configure libffi
-    printstatus "Configuring libffi"
-    run make \
-        $MAKEOPTS \
-        configure-target-libffi
-
     # compile libffi
     printstatus "Compiling libffi"
     run make \
@@ -682,12 +652,6 @@ done
 
 # don't build if not enabled
 [ "$use_fortran" = "y" ] && {
-    # configure libgfortran
-    printstatus "Configuring libgfortran"
-    run make \
-        $MAKEOPTS \
-        configure-target-libgfortran
-
     # compile libgfortran
     printstatus "Compiling libgfortran"
     run make \
@@ -718,12 +682,6 @@ done
 [ "$use_libgomp" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
-
-    # configure libgomp
-    printstatus "Configuring libgomp"
-    run make \
-        $MAKEOPTS \
-        configure-target-libgomp
 
     # compile libgomp
     printstatus "Compiling libgomp"
@@ -773,12 +731,6 @@ done
 
 # don't build if not enabled
 [ "$use_libphobos" = "y" ] && {
-    # configure libphobos
-    printstatus "Configuring libphobos"
-    run make \
-        $MAKEOPTS \
-        configure-target-libphobos
-
     # compile libphobos
     printstatus "Compiling libphobos"
     run make \
@@ -799,12 +751,6 @@ done
 
 # don't build if not enabled
 [ "$use_libssp" = "y" ] && {
-    # configure libssp
-    printstatus "Configuring libssp"
-    run make \
-        $MAKEOPTS \
-        configure-target-libssp
-
     # compile libssp
     printstatus "Compiling libssp"
     run make \
@@ -825,12 +771,6 @@ done
 
 # don't build if not enabled
 [ "$use_libvtv" = "y" ] && {
-    # configure libvtv
-    printstatus "Configuring libvtv"
-    run make \
-        $MAKEOPTS \
-        configure-target-libvtv
-
     # compile libvtv
     printstatus "Compiling libvtv"
     run make \
