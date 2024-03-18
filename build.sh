@@ -76,8 +76,6 @@ while [ "$#" -gt 0 ]; do
         +c|--no-cmdline)        log_commands="n"; shift ;;
         --enable-atomic)        use_libatomic="y"; shift ;;
         --disable-atomic)       use_libatomic="n"; shift ;;
-        --enable-backtrace)     use_libbacktrace="y"; shift ;;
-        --disable-backtrace)    use_libbacktrace="n"; shift ;;
         --enable-c[xp+][xp+])   use_cxx="y"; shift ;;
         --disable-c[xp+][xp+])  use_cxx="n"; shift ;;
         --enable-ffi)           use_libffi="y"; shift ;;
@@ -124,7 +122,6 @@ done
 : "${clean_src:=y}"
 : "${log_commands:=n}"
 : "${use_libatomic:=n}"
-: "${use_libbacktrace:=n}"
 : "${use_cxx:=y}"
 : "${use_libffi:=n}"
 : "${use_fortran:=n}"
@@ -607,27 +604,7 @@ done
 }
 
 
-# Step 10: build libbacktrace
-# ------------------------------------------------------------------------------
-
-# don't build if not enabled
-[ "$use_libbacktrace" = "y" ] && {
-    # compile libbacktrace
-    printstatus "Compiling libbacktrace"
-    run make \
-        $MAKEOPTS \
-        all-target-libbacktrace
-
-    # install libbacktrace
-    printstatus "Installing libbacktrace"
-    run make \
-        $MAKEOPTS \
-        DESTDIR="$bdir" \
-        install-strip-target-libbacktrace
-}
-
-
-# Step 11: build libffi
+# Step 10: build libffi
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
@@ -647,7 +624,7 @@ done
 }
 
 
-# Step 12: build libgfortran
+# Step 11: build libgfortran
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
@@ -675,7 +652,7 @@ done
 }
 
 
-# Step 13: build libgomp
+# Step 12: build libgomp
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
@@ -698,7 +675,7 @@ done
 }
 
 
-# Step 14: build libitm
+# Step 13: build libitm
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
@@ -726,7 +703,7 @@ done
 #}
 
 
-# Step 15: build libphobos
+# Step 14: build libphobos
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
@@ -746,7 +723,7 @@ done
 }
 
 
-# Step 16: build libssp
+# Step 15: build libssp
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
@@ -766,7 +743,7 @@ done
 }
 
 
-# Step 17: build libvtv
+# Step 16: build libvtv
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
