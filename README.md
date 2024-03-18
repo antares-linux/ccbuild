@@ -11,4 +11,5 @@
 - [ ] patch gcc's bad fdpic generation for sh/j2, like in [musl-cross-make](https://github.com/richfelker/musl-cross-make)
 - [ ] add patch sets for older versions (namely gcc)
 - [ ] dependency checker script
+- [ ] research ABIs of supported targets and tweak CPU_FLAGS as needed
 - [ ] write readme/acknowledgements
