@@ -129,6 +129,7 @@ get_pkg() {
               "lynx -dump \"$link\" > \"$archive\""
         do has_command "${_i%% *}" && eval "run $_i" && break
     done
+    printstatus "Hashing $archive"
     run check_hash "$name" && eval "pkg_${name}_verified=y"
 
     test "$timestamping" != "y" && return
@@ -142,10 +143,10 @@ get_pkg() {
 prep_pkg() {
     read_pkg "$1"
     [ -r "$CCBROOT/cache/$archive" ] || error "prep_pkg: $name: Package not downloaded"
-    eval "test \"pkg_${name}_verified\" != \"y\"" && run check_hash "$1"
+    eval "test \"pkg_${name}_verified\" != \"y\"" && printstatus "Hashing $archive" && run check_hash "$1"
     printstatus "Opening $archive"
     run tar -xpf "$CCBROOT/cache/$archive"
-    run test -d "$dirname"
+    test -d "$dirname" || error "$name: $dirname: No such file or directory"
     cd "$dirname"
 
     test -n "$patchpaths" || { cd ..; return; }
@@ -165,7 +166,6 @@ prep_pkg() {
 check_hash() {
     unset _hashcmd _computed_hash _stored_hash
     read_pkg "$1"
-    printstatus "Hashing $archive"
     for _i in "$CCBROOT"/hashes/${name}/${archive}.*; do
         has_command "${_i##*/${archive}.}sum" || continue
         _hashcmd="${_i##*/${archive}.}sum"

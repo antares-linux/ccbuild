@@ -10,7 +10,6 @@
 # there satisfies my OCD and it looks weird without them to me for some
 # reason...
 
-
 # this should be implied on all invocations
 alias printf="printf --"
 
@@ -745,26 +744,28 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libitm" = "y" ] && {
-    # configure libitm
-    printstatus "Configuring libitm"
-    run make \
-        $MAKEOPTS \
-        configure-target-libitm
-
-    # compile libitm
-    printstatus "Compiling libitm"
-    run make \
-        $MAKEOPTS \
-        all-target-libitm
-
-    # install libitm
-    printstatus "Installing libitm"
-    run make \
-        $MAKEOPTS \
-        DESTDIR="$bdir" \
-        install-strip-target-libitm
-}
+# broken for now
+#[ "$use_libitm" = "y" ] && {
+#    # configure libitm
+#    printstatus "Configuring libitm"
+#
+#    run make \
+#        $MAKEOPTS \
+#        configure-target-libitm
+#
+#    # compile libitm
+#    printstatus "Compiling libitm"
+#    run make \
+#        $MAKEOPTS \
+#        all-target-libitm
+#
+#    # install libitm
+#    printstatus "Installing libitm"
+#    run make \
+#        $MAKEOPTS \
+#        DESTDIR="$bdir" \
+#        install-strip-target-libitm
+#}
 
 
 # Step 15: build libphobos
