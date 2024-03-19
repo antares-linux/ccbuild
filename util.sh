@@ -9,11 +9,8 @@
 # garbage bin file
 
 # help message
-print_help() {
-    printf "\
-Usage: $0 [OPTIONS]... [TARGET]
-
-Options:
+print_help() { printf "\
+Usage: $0 [OPTIONS]... [TARGET]\n\nOptions:
       --clean               remove all cached tarballs, builds, and logs
   -c, --cmdline             print commands as they are processed
   +c, --no-cmdline          don't print commands as they are processed
@@ -31,11 +28,8 @@ Options:
       --shell               spawn a subshell when the build finishes
       --targets             print a list of available targets and exit
       --time-fmt=CHAR       whether to use 'l'ong or 's'hort time units
-  -v, --verbose             enable all command output (default)
-
-Features:
-  'atomic',\n  'cxx',\n  'ffi',\n  'fortran',\n  'itm',\n  'lto',\n  'openmp',
-  'phobos',\n  'quadmath',\n  'ssp',\n  'vtv'\n"
+  -v, --verbose             enable all command output (default)\n
+Features:\n  'atomic',\n  'cxx',\n  'ffi',\n  'fortran',\n  'itm',\n  'lto',\n  'openmp',\n  'phobos',\n  'quadmath',\n  'ssp',\n  'vtv'\n"
 }
 
 # exit and print an error
@@ -44,31 +38,11 @@ error() {
     exit "${2:-1}"
 }
 
-# check if a command is installed
-has_command() {
-    while [ "$#" -gt 0 ]; do
-        test -x "$1" && shift && continue
-        command -v "$1" >/dev/null 2>&1 || return 1
-        shift
-    done
-    return 0
-}
-
-# cry if a command is not installed
-needs_command() {
-    for _i in "$@"; do
-        has_command "$_i" && continue
-        error "$_i: command not found" 3
-    done
-}
-
 # case statement wrapper
 str_match() {
     _str="$1"
     shift
-    for _i in "$@"; do
-        eval "case \"$_str\" in $_i) return 0 ;; esac"
-    done
+    for _i in "$@"; do eval "case \"$_str\" in $_i) return 0 ;; esac"; done
     return 1
 }
 
@@ -81,22 +55,14 @@ printstatus() {
 
 # read package vars
 read_pkg() {
-    unset name version link archive dirname patchpaths
     test -n "$1" || error "read_pkg: No package name specified"
     eval "test -n \"\$pkg_${1}_name\"" || error "read_pkg: Package $1 has not been defined"
-    eval "name=\"\$pkg_${1}_name\""
-    eval "version=\"\$pkg_${1}_version\""
-    eval "link=\"\$pkg_${1}_link\""
-    eval "archive=\"\$pkg_${1}_archive\""
-    eval "dirname=\"\$pkg_${1}_dirname\""
-    eval "patchpaths=\"\$pkg_${1}_patchpaths\""
+    eval "name=\"\$pkg_${1}_name\"; version=\"\$pkg_${1}_version\"; link=\"\$pkg_${1}_link\"; archive=\"\$pkg_${1}_archive\"; dirname=\"\$pkg_${1}_dirname\"; patchpaths=\"\$pkg_${1}_patchpaths\""
 }
 
 # set variabless containing info about a package
 def_pkg() {
-    unset name version link archive dirname patchpaths
     test -z "$1" && error "def_pkg: No package name specified"
-
     name="$1"
     eval "pkg_${name}_name=\"$name\""
     version="$2"
@@ -108,30 +74,22 @@ def_pkg() {
     eval "pkg_${name}_dirname=\"$dirname\""
     archive="${5:-${3##*/}}"
     eval "pkg_${name}_archive=\"$archive\""
-
     for _i in "$CCBROOT/patches/${name}" "$CCBROOT/patches/${name}/${version}" "$CCBROOT/patches/${name}-${version}"; do
-        [ -d "$_i" ] && patchpaths="${patchpaths:+$patchpaths }$_i"
+        [ -d "$_i" ] && eval "pkg_${name}_patchpaths=\"\${pkg_${name}_patchpaths:+\$pkg_${name}_patchpaths }$_i\""
     done
-    eval "pkg_${name}_patchpaths=\"$patchpaths\""
 }
 
 # download a package
 get_pkg() {
-    unset _cur_start_time _cur_end_time _cur_time
     read_pkg "$1"
     test -r "$archive" && return 0
     eval "printstatus \"Downloading \${pkg_${1}_link##*/}\""
     test "$timestamping" = "y" && _cur_start="$(get_timestamp)"
-
-    for _i in "aria2c -s \"$JOBS\" -j \"$JOBS\" -o \"$archive\" \"$link\"" \
-              "curl -fL# -o \"$archive\" \"$link\"" \
-              "wget -O \"$archive\" \"$link\"" \
-              "lynx -dump \"$link\" > \"$archive\""
-        do has_command "${_i%% *}" && eval "run $_i" && break
+    for _i in "aria2c -s \"$JOBS\" -j \"$JOBS\" -o \"$archive\" \"$link\""    "curl -fL# -o \"$archive\" \"$link\""    "wget -O \"$archive\" \"$link\""    "lynx -dump \"$link\" > \"$archive\""; do
+        command -v "${_i%% *}" >/dev/null 2>&1 && eval "run $_i" && break
     done
     printstatus "Hashing $archive"
-    run check_hash "$name" && eval "pkg_${name}_verified=y"
-
+    run check_hash "$name"
     test "$timestamping" != "y" && return
     _cur_end="$(get_timestamp)"
     _cur_time="$(diff_timestamp "$_cur_start" "$_cur_end")"
@@ -142,101 +100,73 @@ get_pkg() {
 # prepare and patch a package for building
 prep_pkg() {
     read_pkg "$1"
-    [ -r "$CCBROOT/cache/$archive" ] || error "prep_pkg: $name: Package not downloaded"
+    test -r "$CCBROOT/cache/$archive" || error "prep_pkg: $name: Package not downloaded"
     eval "test \"pkg_${name}_verified\" != \"y\"" && printstatus "Hashing $archive" && run check_hash "$1"
     printstatus "Opening $archive"
     run tar -xpf "$CCBROOT/cache/$archive"
+    test -n "$patchpaths" || return
     test -d "$dirname" || error "$name: $dirname: No such file or directory"
-    cd "$dirname"
-
-    test -n "$patchpaths" || { cd ..; return; }
-    printstatus "Patching $name-$version"
+    printstatus "Patching $name${version:+-$version}"
     for _i in $patchpaths; do
-        test -d "$_i" && for _j in $_i/*.patch $_i/*.diff; do
-            [ -r "$_j" ] && run patch -p0 -i "$_j"
-        done
-        test -d "$_i/$CPU_NAME" && for _k in $_i/*.patch $_i/*.diff; do
-            [ -r "$_k" ] && run patch -p0 -i "$_k"
-        done
+        test -d "$_i"           && for _j in $_i/*.patch $_i/*.diff; do test -r "$_j" && cd "$dirname"; run patch -p0 -i "$_j"; cd ..; done
+        test -d "$_i/$CPU_NAME" && for _k in $_i/*.patch $_i/*.diff; do test -r "$_k" && cd "$dirname"; run patch -p0 -i "$_k"; cd ..; done
     done
-    cd ..
 }
 
 # check hashes for downloaded files
 check_hash() {
-    unset _hashcmd _computed_hash _stored_hash
     read_pkg "$1"
     for _i in "$CCBROOT"/hashes/${name}/${archive}.*; do
-        has_command "${_i##*/${archive}.}sum" || continue
-        _hashcmd="${_i##*/${archive}.}sum"
-        _computed_hash="$($_hashcmd "$CCBROOT/cache/$archive")"
-        _computed_hash="${_computed_hash%% *}"
-        _stored_hash="$(while IFS= read -r line; do printf "$line"; done <"$_i")"
-        test "$_computed_hash" = "$_stored_hash" && return
-        printf "${_hashcmd}: ${archive}: Hash mismatch or compute failure\n" >&2
-        return 1
+        command -v "${_i##*/${archive}.}sum" >/dev/null 2>&1 || continue
+        str_match "$(${_i##*/${archive}.}sum "$CCBROOT/cache/$archive")" "$(while IFS= read -r line; do printf "$line*"; done <"$_i")" && eval "pkg_${name}_verified=y" && return
+        printf "${_i##*/${archive}.}sum: ${archive}: Hash mismatch or compute failure\n" >&2; return 1
     done
 }
 
 # get a timestamp
 get_timestamp() {
-    unset _time _sec _ms
-    test "$has_ns" = "y" || { printf "$(date +%s)"; return; }
+    test "$(date +%N)" = "%N" && { printf "$(date +%s)"; return; }
     _time="$(date +%s.%N)"
-    _sec="${_time%%.*}"
     _ms="${_time##*.}"
-    _ms="${_ms%"${_ms#???}"}"
-    printf "$_sec.$_ms"
+    printf "${_time%%.*}.${_ms%"${_ms#???}"}"
 }
 
 # compare timestamps
 diff_timestamp() {
-    unset _ts _sec _ms
     _ts="$(printf "${2:+$2 - $1 - }0\n" | bc -ql)"
     _sec="${_ts%%.*}"
-    _ms="${_ts##*.}"
-    _ms="${_ms%"${_ms#???}"}"
-    printf "${_sec:-0}${_ms:+.$_ms}"
+    printf "${_sec:-0}${_ts##$_sec}"
 }
 
 # format a timestamp string
 fmt_timestamp() {
-    unset _time _days _hours _minutes _seconds _miliseconds
-    _time="${1:-0}"
-    _seconds="${_time%%.*}"
-    _miliseconds="${_time##$_seconds}"
-    _miliseconds="${_miliseconds#.}"
-    daysuffix="$(if str_match "$time_fmt" 's'; then printf "d"; else printf " days"; fi)"
-    hoursuffix="$(if str_match "$time_fmt" 's'; then printf "h"; else printf " hours"; fi)"
-    minutesuffix="$(if str_match "$time_fmt" 's'; then printf "m"; else printf " minutes"; fi)"
-    secondsuffix="$(if str_match "$time_fmt" 's'; then printf "s"; else printf " seconds"; fi)"
-
-    while [ "$_seconds" -ge 86400 ]; do _seconds="$((_seconds-86400))"; _days="$((_days+1))"; done
-    test "$_days" -ne 1 >&- 2>&- || daysuffix="${daysuffix%s}"
-    while [ "$_seconds" -ge 3600 ]; do _seconds="$((_seconds-3600))"; _hours="$((_hours+1))"; done
-    test "$_hours" -ne 1 >&- 2>&- || hoursuffix="${hoursuffix%s}"
-    while [ "$_seconds" -ge 60 ]; do _seconds="$((_seconds-60))"; _minutes="$((_minutes+1))"; done
-    test "$_minutes" -ne 1 >&- 2>&- || minutesuffix="${minutesuffix%s}"
-    test "$_seconds" -ne 1 >&- 2>&- || test -n "$_miliseconds" || test "$_secondprefix" = "s" || secondsuffix="${secondsuffix%s}"
-    test "$_seconds" -lt 1 >&- 2>&- && secondsuffix="s"
-    printf "${_days:+$_days$daysuffix, }${_hours:+$_hours$hoursuffix, }${_minutes:+$_minutes$minutesuffix, }$_seconds${_miliseconds:+.$_miliseconds}$secondsuffix\n"
+    _seconds="${1%%.*}"
+    _miliseconds="${1##$_seconds}"
+    _days="$((_seconds / 86400))"
+    _seconds="$((_seconds % 86400))"
+    _hours="$((_seconds / 3600))"
+    _seconds="$((_seconds % 3600))"
+    _minutes="$((_seconds / 60))"
+    _seconds="$((_seconds % 60))"
+    _seconds="$_seconds$_miliseconds"
+    printf "$(test "$_days" -gt 0 && printf "%%d%%s%%s%%s")" "$_days" "$(if test "$time_fmt" = "s"; then printf "d"; else printf " day"; fi)" "$(test "$_days" != "1" -a "$time_fmt" != "s" && printf "s")" "$(test "$_hours" = "0" -a "$_minutes" = "0" -a "$_seconds" = "0" || printf ", ")"
+    printf "$(test "$_hours" -gt 0 && printf "%%d%%s%%s%%s")" "$_hours" "$(if test "$time_fmt" = "s"; then printf "h"; else printf " hour"; fi)" "$(test "$_hours" != "1" -a "$time_fmt" != "s" && printf "s")" "$(test "$_minutes" = "0" -a "$_seconds" = "0" || printf ", ")"
+    printf "$(test "$_minutes" -gt 0 && printf "%%d%%s%%s%%s")" "$_minutes" "$(if test "$time_fmt" = "s"; then printf "h"; else printf " minute"; fi)" "$(test "$_minutes" != "1" -a "$time_fmt" != "s" && printf "s")" "$(test "$_seconds" = "0" -a "$_seconds" = "0" || printf ", ")"
+    printf "$(test "$_seconds" != "0" && printf "%%s%%s%%s")" "$_seconds" "$(if test "$time_fmt" = "s" -o "${_seconds%%.*}" = "0"; then printf "s"; else printf " second"; fi)" "$(test "$_seconds" != "1" -a "$_seconds" != "1.000" -a "${_seconds%%.*}" != "0" -a "$time_fmt" != "s" && printf "s")"
 }
 
 # gaaabag been
 run() {
-    unset cmd suf printcd ec
-    needs_command "$1" && cmd="$1" && shift
-    str_match "${cmd##*/}" 'mkdir|cp|ln|rm|curl|mv|tar' && suf="-v"
-    str_match "${cmd##*/}" 'cd|pushd|popd' && printcd="y"
+    command -v "$1" >/dev/null || error "$1: command not found" 127; cmd="$1"; shift
+    str_match "${cmd##*/}" 'mkdir|cp|ln|rm|curl|mv|tar' && suf="-v" || suf=""
     test "$verbosity" = "quieter" -a -z "$log_file" && \
         if str_match "${cmd##*/}" 'make|configure|wget|aria2c|patch'; then suf=">/dev/null"; else unset suf; fi
     test -n "$log_file" && \
         if str_match "${cmd##*/}" 'rm|tar'; then suf=">/dev/null 2>>'$log_file'"; else suf="${suf:+$suf }>>'$log_file' 2>&1"; fi
     test -z "$log_file" && suf="${suf:+$suf }2>&1"
     test "$verbosity" = "silent" -a -n "$log_file" && suf=">/dev/null 2>&1"
-    test -n "$log_file" -a "$printcd" = "y" && printf "CHANGE_DIRECTORY: $*\n" >>"$log_file"
-    test -n "$log_file" -a "$printcd" != "y" && printf "COMMAND: $cmd $*\n" >>"$log_file"
+    test -n "$log_file" && str_match "${cmd##*/}" 'cd|pushd|popd' && printf "CHANGE_DIRECTORY: $*\n" >>"$log_file"
+    test -n "$log_file" && ! str_match "${cmd##*/}" 'cd|pushd|popd' && printf "COMMAND: $cmd $*\n" >>"$log_file"
     test "$log_commands" = "y" && printf "\033[90m\$\033[0m\033[3m $cmd $*\033[0m\n" >&2
-    eval "$cmd \"\$@\"${suf:+ $suf}"
-    test "${ec:=$?}" -gt "0" && error "failed at \`$cmd $*\`" "$ec"
+    eval "$cmd \"\$@\"${suf:+ $suf}" || error "failed at \`$cmd $*\`" "$?"
 }

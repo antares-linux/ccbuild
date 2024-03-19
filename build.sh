@@ -193,13 +193,8 @@ set +a
 [ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $(str_match "$JOBS" '1' && printf "thread" || printf "threads")\n" >&2
 
 # check if we have thee commands needed for timestamping
-has_command date bc && {
+command -v date >/dev/null 2>&1 && command -v bc >/dev/null 2>&1 && {
     timestamping="y"
-
-    # check whether nanoseconds work
-    [ "$(date +%N)" != '%N' ] && has_ns="y"
-
-    # get the starting time for the build
     start_time="$(get_timestamp)"
 }
 
@@ -780,7 +775,7 @@ run cd "$bdir"
 [ -d "$bdir/src" -a "$clean_src" = "y" ] && run rm -rf "$bdir/src"
 
 # get the end timestamp
-test "$timestamping" = "y" && end_time="$(get_timestamp)"
+[ "$timestamping" = "y" ] && end_time="$(get_timestamp)"
 
 # print status message
 printf "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})%s%s\n" \
