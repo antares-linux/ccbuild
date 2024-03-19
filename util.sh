@@ -108,8 +108,8 @@ prep_pkg() {
     test -d "$dirname" || error "$name: $dirname: No such file or directory"
     printstatus "Patching $name${version:+-$version}"
     for _i in $patchpaths; do
-        test -d "$_i"           && for _j in $_i/*.patch $_i/*.diff; do test -r "$_j" && cd "$dirname"; run patch -p0 -i "$_j"; cd ..; done
-        test -d "$_i/$CPU_NAME" && for _k in $_i/*.patch $_i/*.diff; do test -r "$_k" && cd "$dirname"; run patch -p0 -i "$_k"; cd ..; done
+        test -d "$_i"           && for _j in $_i/*.patch $_i/*.diff; do test -r "$_j" && { cd "$dirname"; run patch -p0 -i "$_j"; cd ..; }; done
+        test -d "$_i/$CPU_NAME" && for _k in $_i/*.patch $_i/*.diff; do test -r "$_k" && { cd "$dirname"; run patch -p0 -i "$_k"; cd ..; }; done
     done
 }
 
