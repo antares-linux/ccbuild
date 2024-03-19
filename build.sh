@@ -167,6 +167,11 @@ LDFLAGS="-s -Wl,--gc-sections,-s,-z,now,--hash-style=sysv,--build-id=none,--sort
 JOBS="${jobs:-1}"
 PATH="$CCBROOT/misc/bin:$bdir/bin:$PATH"
 HISTFILE="$CCBROOT/shell_history.txt"
+PKG_CONFIG_PATH="$bdir/lib/pkgconfig"
+PKG_CONFIG_LIBDIR="$bdir/lib/pkgconfig"
+PKG_CONFIG_SYSROOT_DIR="$bdir"
+PKG_CONFIG_SYSTEM_INCLUDE_PATH="$bdir/include"
+PKG_CONFIG_SYSTEM_LIBRARY_PATH="$bdir/lib"
 
 # gcc langs
 GCCLANGS="c"
