@@ -13,3 +13,4 @@
 - [ ] dependency checker script
 - [ ] research ABIs of supported targets and tweak CPU_FLAGS as needed
 - [ ] write readme/acknowledgements
+- [ ] `--sysroot` option: specify a custom `$bdir` and prevent clobbering existing directories/etc
