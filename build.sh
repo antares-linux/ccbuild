@@ -23,6 +23,7 @@ IFS="/"
 
 # try to cd to the cwd of the script
 # only works if $0 is a path to build.sh, not a basename
+[ -z "${0%%/*}" ] && cd /
 for i in $0; do
     [ -d "$i" ] && cd "$i"
 done
