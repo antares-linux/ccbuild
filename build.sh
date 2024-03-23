@@ -297,7 +297,6 @@ run "../$pkg_binutils_dirname/configure" \
     --disable-rpath \
     $CPU_FLAGS
 
-
 # compile binutils
 printstatus "Compiling binutils-$pkg_binutils_version"
 run make \
