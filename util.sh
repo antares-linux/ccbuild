@@ -125,17 +125,14 @@ check_hash() {
 
 # get a timestamp
 get_timestamp() {
-    test "$(date +%N)" = "%N" && { printf "$(date +%s)"; return; }
-    _time="$(date +%s.%N)"
-    _ms="${_time##*.}"
-    printf "${_time%%.*}.${_ms%"${_ms#???}"}"
+    test "$(date +%N)" = "%N" && printf "$(date +%s)" && return
+    printf "%1.3f" "$(date +%s.%N)"
 }
 
 # compare timestamps
 diff_timestamp() {
-    _ts="$(printf "${2:+$2 - $1 - }0\n" | bc -ql)"
-    _sec="${_ts%%.*}"
-    printf "${_sec:-0}${_ts##$_sec}"
+    test "$1" = "${1%%.*}" -a "$2" = "${2%%.*}" && printf "${2:+$2 - $1 - }0\n" | bc -ql && return
+    printf "%1.3f" "$(printf "${2:+$2 - $1 - }0\n" | bc -ql)"
 }
 
 # format a timestamp string
