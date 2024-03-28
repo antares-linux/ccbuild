@@ -93,8 +93,7 @@ get_pkg() {
     test "$timestamping" != "y" && return
     _cur_end="$(get_timestamp)"
     _cur_time="$(diff_timestamp "$_cur_start" "$_cur_end")"
-    download_time="$(printf "${download_time:+$download_time + }$_cur_time\n" | bc -ql)"
-    test -z "${download_time%%.*}" && download_time="0$download_time"
+    download_time="$(awk -v a="$_cur_time" -v b="${download_time:-0}" 'BEGIN{print a + b}')"
 }
 
 # prepare and patch a package for building
@@ -131,8 +130,7 @@ get_timestamp() {
 
 # compare timestamps
 diff_timestamp() {
-    test "$1" = "${1%%.*}" -a "$2" = "${2%%.*}" && printf "${2:+$2 - $1 - }0\n" | bc -ql && return
-    printf "%1.3f" "$(printf "${2:+$2 - $1 - }0\n" | bc -ql)"
+    awk -v a="${1:-0}" -v b="${2:-0}" 'BEGIN{print b - a; exit}'
 }
 
 # format a timestamp string

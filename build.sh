@@ -194,7 +194,7 @@ set +a
 [ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $(str_match "$JOBS" '1' && printf "thread" || printf "threads")\n" >&2
 
 # check if we have thee commands needed for timestamping
-command -v date >/dev/null 2>&1 && command -v bc >/dev/null 2>&1 && {
+command -v date >/dev/null 2>&1 && command -v awk >/dev/null 2>&1 && {
     timestamping="y"
     start_time="$(get_timestamp)"
 }
@@ -767,8 +767,11 @@ done
 # ------------------------------------------------------------------------------
 
 # we might want to open a shell here
-run cd "$bdir"
-[ "$spawn_shell" = "y" ] && eval "${SHELL:-/bin/sh}"
+[ "$spawn_shell" = "y" ] && {
+    run cd "$bdir"
+    printf "You are entering a shell spawned by ccbuild, preserving the build environment\nand its variables. When you are done, use the \`exit\` command or ^D to exit.\n"
+    eval "${SHELL:-/bin/sh}"
+}
 
 # delete useless directories
 [ -d "$bdir/_tmp" ] && run rm -rf "$bdir/_tmp"
