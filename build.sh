@@ -70,69 +70,52 @@ def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-\${version}/gcc-\${versio
 # parse command-line arguments
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --clean)                rm -rf "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"; exit $? ;;
-        -C|--cleanup)           clean_src="y"; shift ;;
-        +C|--no-cleanup)        clean_src="n"; shift ;;
-        -c|--cmdline)           log_commands="y"; shift ;;
-        +c|--no-cmdline)        log_commands="n"; shift ;;
-        --enable-atomic)        use_libatomic="y"; shift ;;
-        --disable-atomic)       use_libatomic="n"; shift ;;
-        --enable-c[xp+][xp+])   use_cxx="y"; shift ;;
-        --disable-c[xp+][xp+])  use_cxx="n"; shift ;;
-        --enable-ffi)           use_libffi="y"; shift ;;
-        --disable-ffi)          use_libffi="n"; shift ;;
-        --enable-fortran)       use_fortran="y" use_libquadmath="y"; shift ;;
-        --disable-fortran)      use_fortran="n"; test "$use_libquadmath_specified" = "y" || use_libquadmath="n"; shift ;;
-        --enable-openmp)        use_libgomp="y"; shift ;;
-        --disable-openmp)       use_libgomp="n"; shift ;;
-        --enable-itm)           use_libitm="y"; shift ;;
-        --disable-itm)          use_libitm="n"; shift ;;
-        --enable-lto)           use_lto="y"; shift ;;
-        --disable-lto)          use_lto="n"; shift ;;
-        --enable-phobos)        use_libphobos="y"; shift ;;
-        --disable-phobos)       use_libphobos="n"; shift ;;
-        --enable-quadmath)      use_libquadmath="y"; use_libquadmath_specified="y"; shift ;;
-        --disable-quadmath)     use_libquadmath="n"; shift ;;
-        --enable-ssp)           use_libssp="y"; shift ;;
-        --disable-ssp)          use_libssp="n"; shift ;;
-        --enable-vtv)           use_libvtv="y"; shift ;;
-        --disable-vtv)          use_libvtv="n"; shift ;;
-        -h|--help)              print_help; exit ;;
-        -j|--jobs)              test "$2" -le 1024 2>/dev/null            && jobs="$2"; shift 2 ;;
-        -j*)                    test "${1##-j}" -le 1024 2>/dev/null      && jobs="${1##-j}"; shift ;;
-        --jobs=*)               test "${1##--jobs=}" -le 1024 2>/dev/null && jobs="${1##--jobs=}"; shift ;;
-        -l|--log)               log_file="$CCBROOT/ccbuild.log"; :>"$log_file"; shift ;;
-        -l*)                    log_file="${1##-l}";             :>"$log_file"; shift ;;
-        --log=*)                log_file="${1##--log=}";         :>"$log_file"; shift ;;
-        +l|--no-log)            unset log_file; shift ;;
-        -n|--name)              bname="$2";            shift 2 ;;
-        -n*)                    bname="${1##-n}";      shift ;;
-        --name=*)               bname="${1##--name=}"; shift ;;
-        -q|--quieter)           verbosity="quieter"; shift ;;
-        -s|--silent)            verbosity="silent";  shift ;;
-        --shell)                spawn_shell="y"; shift ;;
-        --time-fmt)             str_match "$2" 'l' 's' && time_fmt="$2"; shift 2 ;;
-        --time-fmt=*)           str_match "${1##--ts-unit-fmt=}" 'l' 's' && time_fmt="${1##--ts-unit-fmt=}"; shift ;;
-        --targets)              for i in "$CCBROOT"/arch/*.conf; do test -L "$i" && continue; i="${i%%.conf}"; printf "${i##*/} "; done; printf "\n"; exit ;;
-        -v|--verbose)           verbosity="normal"; shift ;;
-        *)                      test -z "$target" && target="${1%%/}"; shift ;;
+        --clean)            rm -rf "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"; exit $? ;;
+        -C|--cleanup)       clean_src="y"; shift ;;
+        +C|--no-cleanup)    clean_src="n"; shift ;;
+        -c|--cmdline)       log_commands="y"; shift ;;
+        +c|--no-cmdline)    log_commands="n"; shift ;;
+        --enable-fortran)   use_fortran="y" use_quadmath="y"; shift ;;
+        --disable-fortran)  use_fortran="n"; test "$use_quadmath_specified" = "y" || use_quadmath="n"; shift ;;
+        --enable-quadmath)  use_quadmath="y"; use_quadmath_specified="y"; shift ;;
+        --enable-*)         eval "use_${1##--enable-}=y"; shift ;;
+        --disable-*)        eval "use_${1##--disable-}=n"; shift ;;
+        -h|--help)          print_help; exit ;;
+        -j|--jobs)          test "$2" -le 1024 2>/dev/null            && jobs="$2"; shift 2 ;;
+        -j*)                test "${1##-j}" -le 1024 2>/dev/null      && jobs="${1##-j}"; shift ;;
+        --jobs=*)           test "${1##--jobs=}" -le 1024 2>/dev/null && jobs="${1##--jobs=}"; shift ;;
+        -l|--log)           log_file="$CCBROOT/ccbuild.log"; :>"$log_file"; shift ;;
+        -l*)                log_file="${1##-l}";             :>"$log_file"; shift ;;
+        --log=*)            log_file="${1##--log=}";         :>"$log_file"; shift ;;
+        +l|--no-log)        unset log_file; shift ;;
+        -n|--name)          bname="$2";            shift 2 ;;
+        -n*)                bname="${1##-n}";      shift ;;
+        --name=*)           bname="${1##--name=}"; shift ;;
+        -q|--quieter)       verbosity="quieter"; shift ;;
+        -s|--silent)        verbosity="silent";  shift ;;
+        --shell)            spawn_shell="y"; shift ;;
+        --time-fmt)         str_match "$2" 'l' 's' && time_fmt="$2"; shift 2 ;;
+        --time-fmt=*)       str_match "${1##--ts-unit-fmt=}" 'l' 's' && time_fmt="${1##--ts-unit-fmt=}"; shift ;;
+        --targets)          for i in "$CCBROOT"/arch/*.conf; do test -L "$i" && continue; i="${i%%.conf}"; printf "${i##*/} "; done; printf "\n"; exit ;;
+        -v|--verbose)       verbosity="normal"; shift ;;
+        *)                  test -z "$target" && target="${1%%/}"; shift ;;
     esac
 done
 
 # defaults for options
 : "${clean_src:=y}"
 : "${log_commands:=n}"
-: "${use_libatomic:=n}"
+: "${use_atomic:=n}"
 : "${use_cxx:=y}"
-: "${use_libffi:=n}"
+: "${use_ffi:=n}"
 : "${use_fortran:=n}"
-: "${use_libgomp:=n}"
-: "${use_libitm:=n}"
+: "${use_openmp:=n}"
+: "${use_itm:=n}"
 : "${use_lto:=n}"
-: "${use_libphobos:=n}"
-: "${use_libquadmath:=n}"
-: "${use_libssp:=n}"
-: "${use_libvtv:=n}"
+: "${use_phobos:=n}"
+: "${use_quadmath:=n}"
+: "${use_ssp:=n}"
+: "${use_vtv:=n}"
 : "${jobs:=1}"
 : "${spawn_shell:=n}"
 : "${time_fmt:=l}"
@@ -554,7 +537,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libquadmath" = "y" ] && {
+[ "$use_quadmath" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -585,7 +568,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libatomic" = "y" ] && {
+[ "$use_atomic" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -608,7 +591,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libffi" = "y" ] && {
+[ "$use_ffi" = "y" ] && {
     # compile libffi
     printstatus "Compiling libffi"
     run make \
@@ -656,7 +639,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libgomp" = "y" ] && {
+[ "$use_openmp" = "y" ] && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -680,7 +663,7 @@ done
 
 # don't build if not enabled
 # broken for now
-#[ "$use_libitm" = "y" ] && {
+#[ "$use_itm" = "y" ] && {
 #    # configure libitm
 #    printstatus "Configuring libitm"
 #
@@ -707,7 +690,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libphobos" = "y" ] && {
+[ "$use_phobos" = "y" ] && {
     # compile libphobos
     printstatus "Compiling libphobos"
     run make \
@@ -727,7 +710,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libssp" = "y" ] && {
+[ "$use_ssp" = "y" ] && {
     # compile libssp
     printstatus "Compiling libssp"
     run make \
@@ -747,7 +730,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_libvtv" = "y" ] && {
+[ "$use_vtv" = "y" ] && {
     # compile libvtv
     printstatus "Compiling libvtv"
     run make \
