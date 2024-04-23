@@ -396,6 +396,12 @@ run ln -sf $TARGET-gcc-$pkg_gcc_version $TARGET-gcc
 run ln -sf $TARGET-gcc $TARGET-cc
 run ln -sf $TARGET-g++ $TARGET-c++
 
+# symlink everything else
+run cd "$bdir/$TARGET/bin"
+for i in ../../bin/*; do
+    test -e "${i##*/$TARGET-}" || run ln -sf "$i" "${i##*/$TARGET-}"
+done
+
 
 # Step 4: build libgcc-static
 # ------------------------------------------------------------------------------
