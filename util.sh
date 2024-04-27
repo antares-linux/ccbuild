@@ -10,7 +10,7 @@
 
 # help message
 print_help() { printf "\
-Usage: $0 [OPTIONS]... [TARGET]\n\nOptions:
+Usage: %s [OPTIONS]... [TARGET]\n\nOptions:
       --clean               remove all cached tarballs, builds, and logs
   -c, --cmdline             print commands as they are processed
   +c, --no-cmdline          don't print commands as they are processed
@@ -20,7 +20,7 @@ Usage: $0 [OPTIONS]... [TARGET]\n\nOptions:
       --disable-FEATURE     disable (don't acquire and build) FEATURE
   -h, --help                print this message
   -j, --jobs=JOBS           concurrent job/task count
-  -l, --log[=FILE]          log compiler output in FILE or ccbuild.log
+  -l, --log[=FILE]          log build output in FILE or ccbuild.log
   +l, --no-log              don't log compiler output in FILE or ccbuild.log
   -n, --name=NAME           name of the build (default: ccb-CPU_NAME)
   -q, --quieter             reduce output if printing to a terminal
@@ -29,12 +29,12 @@ Usage: $0 [OPTIONS]... [TARGET]\n\nOptions:
       --targets             print a list of available targets and exit
       --time-fmt=CHAR       whether to use 'l'ong or 's'hort time units
   -v, --verbose             enable all command output (default)\n
-Features:\n  'atomic',\n  'cxx',\n  'ffi',\n  'fortran',\n  'itm',\n  'lto',\n  'openmp',\n  'phobos',\n  'quadmath',\n  'ssp',\n  'vtv'\n"
+Features:\n  'atomic',\n  'cxx',\n  'ffi',\n  'fortran',\n  'itm',\n  'lto',\n  'openmp',\n  'phobos',\n  'quadmath',\n  'ssp',\n  'vtv'\n" "$0"
 }
 
 # exit and print an error
 error() {
-    printf "${0##*/}: error: %s\n" "$1" >&2
+    printf "%s: error: %s\n" "${0##*/}" "$1" >&2
     exit "${2:-1}"
 }
 
@@ -42,7 +42,7 @@ error() {
 str_match() {
     _str="$1"
     shift
-    for _i in "$@"; do eval "case \"$_str\" in $_i) return 0 ;; esac"; done
+    for _case in "$@"; do eval "case \"\$_str\" in $_case) return 0 ;; esac"; done
     return 1
 }
 
@@ -93,7 +93,7 @@ get_pkg() {
     test "$timestamping" != "y" && return
     _cur_end="$(get_timestamp)"
     _cur_time="$(diff_timestamp "$_cur_start" "$_cur_end")"
-    download_time="$(awk -v a="$_cur_time" -v b="${download_time:-0}" 'BEGIN{print a + b}')"
+    download_time="$(awk -v a="$_cur_time" -v b="${download_time:-0}" 'BEGIN{print a + b; exit}')"
 }
 
 # prepare and patch a package for building
@@ -117,14 +117,14 @@ check_hash() {
     read_pkg "$1"
     for _i in "$CCBROOT"/hashes/${name}/${archive}.*; do
         command -v "${_i##*/${archive}.}sum" >/dev/null 2>&1 || continue
-        str_match "$(${_i##*/${archive}.}sum "$CCBROOT/cache/$archive")" "$(while IFS= read -r line; do printf "$line*"; done <"$_i")" && eval "pkg_${name}_verified=y" && return
-        printf "${_i##*/${archive}.}sum: ${archive}: Hash mismatch or compute failure\n" >&2; return 1
+        str_match "$(${_i##*/${archive}.}sum "$CCBROOT/cache/$archive")" "$(while IFS= read -r line; do printf "%s" "$line*"; break; done <"$_i")" && eval "pkg_${name}_verified=y" && return
+        printf "%s: %s: Hash mismatch or compute failure\n" "${_i##*/${archive}.}sum" "$archive" >&2; return 1
     done
 }
 
 # get a timestamp
 get_timestamp() {
-    test "$(date +%N)" = "%N" && printf "$(date +%s)" && return
+    test "$(date +%N)" = "%N" && printf "%d" "$(date +%s)" && return
     printf "%1.3f" "$(date +%s.%N)"
 }
 
@@ -160,8 +160,8 @@ run() {
         if str_match "${cmd##*/}" 'rm|tar'; then suf=">/dev/null 2>>'$log_file'"; else suf="${suf:+$suf }>>'$log_file' 2>&1"; fi
     test -z "$log_file" && suf="${suf:+$suf }2>&1"
     test "$verbosity" = "silent" -a -n "$log_file" && suf=">/dev/null 2>&1"
-    test -n "$log_file" && str_match "${cmd##*/}" 'cd|pushd|popd' && printf "CHANGE_DIRECTORY: $*\n" >>"$log_file"
-    test -n "$log_file" && ! str_match "${cmd##*/}" 'cd|pushd|popd' && printf "COMMAND: $cmd $*\n" >>"$log_file"
-    test "$log_commands" = "y" && printf "\033[90m\$\033[0m\033[3m $cmd $*\033[0m\n" >&2
+    test -n "$log_file" && str_match "${cmd##*/}" 'cd|pushd|popd' && printf "CHANGE_DIRECTORY: %s\n" "$*" >>"$log_file"
+    test -n "$log_file" && ! str_match "${cmd##*/}" 'cd|pushd|popd' && printf "COMMAND: %s %s\n" "$cmd" "$*" >>"$log_file"
+    test "$log_commands" = "y" && printf "\033[90m\$\033[0m\033[3m %s %s\033[0m\n" "$cmd" "$*" >&2
     eval "$cmd \"\$@\"${suf:+ $suf}" || error "failed at \`$cmd $*\`" "$?"
 }
