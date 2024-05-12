@@ -17,40 +17,22 @@ alias printf="printf --"
 # rather than undefined so this backup fills that role
 command -v unset >/dev/null 2>&1 || eval "unset() { for _i in \"\$@\"; do eval \"\$_i=\\\"\\\"\"; done; }"
 
-# fields are separated by '/' so each path element is operated on
-_IFS="$IFS"
-IFS="/"
-
 # try to cd to the cwd of the script
 # only works if $0 is a path to build.sh, not a basename
-[ -z "${0%%/*}" ] && cd /
+test -z "${0%%/*}" && cd /
+IFS="/"
 for i in $0; do
-    [ -d "$i" ] && cd "$i"
+    test -d "$i" && cd "$i"
 done
-
-# restore old field separator
-IFS="$_IFS"
+IFS="$(printf ' \t\n')"
 
 # save script cwd
 export CCBROOT="$PWD"
 
-# exit if ccbroot can't be set
-[ -n "$CCBROOT" ] || {
-    printf "${0##*/}: error: CCBROOT can't be set\n" >&2
-    exit 1
-}
-
-# exit if ccbroot isn't set correctly
-[ -r "$CCBROOT/${0##*/}" ] || {
-    printf "${0##*/}: error: CCBROOT set incorrectly\n" >&2
-    exit 1
-}
-
-# ensure util.sh exists
-[ -r "$CCBROOT/util.sh" ] || {
-    printf "${0##*/}: error: util.sh: No such file or directory\n" >&2
-    exit 1
-}
+# make sure we're in the right place
+test -z "$CCBROOT" && printf "${0##*/}: error: CCBROOT can't be set\n" >&2 && exit 1
+test ! -r "$CCBROOT/${0##*/}" && printf "${0##*/}: error: CCBROOT set incorrectly\n" >&2 && exit 1
+test ! -r "$CCBROOT/util.sh" && printf "${0##*/}: error: util.sh: No such file or directory\n" >&2 && exit 1
 
 # load utility functions (these are separated so build.sh stays clean and simple)
 . "$CCBROOT/util.sh"
@@ -68,7 +50,7 @@ def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-\${version}/gcc-\${versio
 # ------------------------------------------------------------------------------
 
 # parse command-line arguments
-while [ "$#" -gt 0 ]; do
+while test "$#" -gt 0; do
     case "$1" in
         --clean)            rm -rf "$CCBROOT/out" "$CCBROOT/cache" "$CCBROOT/ccbuild.log"; exit $? ;;
         -C|--cleanup)       clean_src="y"; shift ;;
@@ -126,23 +108,15 @@ done
 set -a
 
 # try to load the architecture build flags
-[ -r "$CCBROOT/arch/$target.conf" ] && {
-    . "$CCBROOT/arch/$target.conf"
-} || {
-    [ -n "$target" ] && error "Invalid option or target $target"
-    error "No target specified. Run \`$0 --help\` for more information."
-}
+test ! -r "$CCBROOT/arch/$target.conf" -a -n "$target" && error "Invalid option or target $target"
+test ! -r "$CCBROOT/arch/$target.conf" && error "No target specified. Run \`$0 --help\` for more information."
+. "$CCBROOT/arch/$target.conf"
 
 # set the build directory for a new toolchain
-[ -d "$CCBROOT/out/${bname:=ccb-$CPU_NAME}" ] && {
-    i="2"
-    while [ -d "$CCBROOT/out/$bname.$i" ]; do
-        i="$((i+1))"
-    done
-    bdir="$CCBROOT/out/$bname.$i"
-} || {
-    bdir="$CCBROOT/out/$bname"
-}
+bdir="$CCBROOT/out/${bname:=ccb-$CPU_NAME}"
+test -d "$CCBROOT/out/$bname" && i="2" && while test -d "$CCBROOT/out/$bname.$i"; do
+    i="$((i+1))"
+done && bdir="$CCBROOT/out/$bname.$i"
 
 # environment variables
 CFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -159,9 +133,9 @@ PKG_CONFIG_SYSTEM_LIBRARY_PATH="$bdir/lib"
 
 # gcc langs
 GCCLANGS="c"
-[ "$use_cxx" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}c++"
-[ "$use_fortran" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}fortran"
-[ "$use_lto" = "y" ] && GCCLANGS="${GCCLANGS:+$GCCLANGS,}lto"
+test "$use_cxx" = "y" && GCCLANGS="${GCCLANGS:+$GCCLANGS,}c++"
+test "$use_fortran" = "y" && GCCLANGS="${GCCLANGS:+$GCCLANGS,}fortran"
+test "$use_lto" = "y" && GCCLANGS="${GCCLANGS:+$GCCLANGS,}lto"
 
 # make/cmake command lines
 MAKEOPTS="INFO_DEPS= MAKEINFO=true ac_cv_prog_lex_root=lex.yy -j$JOBS"
@@ -174,16 +148,13 @@ set +a
 # ------------------------------------------------------------------------------
 
 # print the starting status message
-[ "$verbosity" != "silent" ] && printf "Starting build for $CPU_NAME/musl (${bdir##$CCBROOT/}) with $JOBS $(str_match "$JOBS" '1' && printf "thread" || printf "threads")\n" >&2
+test "$verbosity" != "silent" && printf "Starting build for $CPU_NAME/musl (%s) with $JOBS %s\n" "${bdir##$CCBROOT/}" "$(str_match "$JOBS" '1' && printf "thread" || printf "threads")" >&2
 
 # check if we have thee commands needed for timestamping
-command -v date >/dev/null 2>&1 && command -v awk >/dev/null 2>&1 && {
-    timestamping="y"
-    start_time="$(get_timestamp)"
-}
+command -v date >/dev/null 2>&1 && command -v awk >/dev/null 2>&1 && timestamping="y" && start_time="$(get_timestamp)"
 
 # create a dir to store downloaded files
-[ ! -d "$CCBROOT/cache" ] && run mkdir -p "$CCBROOT/cache"
+test ! -d "$CCBROOT/cache" && run mkdir -p "$CCBROOT/cache"
 
 # cd to the cache dir
 run cd "$CCBROOT/cache"
@@ -303,11 +274,7 @@ run cd "$bdir/bin"
 
 # empty path
 for i in $TARGET-*; do
-    # move or delete
-    [ -r "../$TARGET/bin/${i##$TARGET-}" ] && {
-        run rm -f "$i"
-        continue
-    }
+    test -r "../$TARGET/bin/${i##$TARGET-}" && run rm -f "$i" && continue
     run mv -f "$i" "../$TARGET/bin/${i##$TARGET-}"
 done
 
@@ -320,7 +287,7 @@ run cd "$bdir/bin"
 
 # link utils to path
 for i in ../$TARGET/bin/*; do
-    [ -r "$TARGET-${i##*/}" ] || run ln -sf "$i" "$TARGET-${i##*/}"
+    test ! -r "$TARGET-${i##*/}" && run ln -sf "$i" "$TARGET-${i##*/}"
 done
 
 
@@ -399,7 +366,7 @@ run ln -sf $TARGET-g++ $TARGET-c++
 # symlink everything else
 run cd "$bdir/$TARGET/bin"
 for i in ../../bin/*; do
-    test -e "${i##*/$TARGET-}" || run ln -sf "$i" "${i##*/$TARGET-}"
+    test ! -r "${i##*/$TARGET-}" && run ln -sf "$i" "${i##*/$TARGET-}"
 done
 
 
@@ -428,7 +395,7 @@ run cd "$bdir/lib"
 
 # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
 for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
-    [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+    test -r "$i" -a ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
 done
 
 
@@ -469,7 +436,7 @@ run cd "$bdir/lib"
 
 # link names of the dynamic loader to libc.so
 for i in ld-*.so ld-*.so.*; do
-    [ -r "$i" ] && run ln -sf libc.so "$i"
+    test -r "$i" && run ln -sf libc.so "$i"
 done
 
 
@@ -504,7 +471,7 @@ run cd "$bdir/lib"
 
 # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
 for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
-    [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+    test -r "$i" -a ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
 done
 
 
@@ -512,7 +479,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_cxx" = "y" ] && {
+test "$use_cxx" = "y" && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -534,7 +501,7 @@ done
 
     # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
     for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a; do
-        [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+        test -r "$i" -a ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
     done
 }
 
@@ -543,7 +510,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_quadmath" = "y" ] && {
+test "$use_quadmath" = "y" && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -565,7 +532,7 @@ done
 
     # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
     for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a gcc/$TARGET/$pkg_gcc_version/*.la; do
-        [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+        test -r "$i" -a ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
     done
 }
 
@@ -574,7 +541,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_atomic" = "y" ] && {
+test "$use_atomic" = "y" && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -597,7 +564,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_ffi" = "y" ] && {
+test "$use_ffi" = "y" && {
     # compile libffi
     printstatus "Compiling libffi"
     run make \
@@ -617,7 +584,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_fortran" = "y" ] && {
+test "$use_fortran" = "y" && {
     # compile libgfortran
     printstatus "Compiling libgfortran"
     run make \
@@ -636,7 +603,7 @@ done
 
     # create links to libgcc objects in /lib (the linker/loader might not find them in the gcc subpath)
     for i in gcc/$TARGET/$pkg_gcc_version/*.o gcc/$TARGET/$pkg_gcc_version/*.so gcc/$TARGET/$pkg_gcc_version/*.a gcc/$TARGET/$pkg_gcc_version/*.la; do
-        [ -r "$i" ] && [ ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" ] && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
+        test -r "$i" -a ! -r "${i##gcc/$TARGET/$pkg_gcc_version/}" && run ln -sf $i ${i##gcc/$TARGET/$pkg_gcc_version/}
     done
 }
 
@@ -645,7 +612,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_openmp" = "y" ] && {
+test "$use_openmp" = "y" && {
     # cd back to the gcc build dir
     run cd "$bdir/src/build-gcc"
 
@@ -669,7 +636,7 @@ done
 
 # don't build if not enabled
 # broken for now
-#[ "$use_itm" = "y" ] && {
+#test "$use_itm" = "y" && {
 #    # configure libitm
 #    printstatus "Configuring libitm"
 #
@@ -696,7 +663,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_phobos" = "y" ] && {
+test "$use_phobos" = "y" && {
     # compile libphobos
     printstatus "Compiling libphobos"
     run make \
@@ -716,7 +683,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_ssp" = "y" ] && {
+test "$use_ssp" = "y" && {
     # compile libssp
     printstatus "Compiling libssp"
     run make \
@@ -736,7 +703,7 @@ done
 # ------------------------------------------------------------------------------
 
 # don't build if not enabled
-[ "$use_vtv" = "y" ] && {
+test "$use_vtv" = "y" && {
     # compile libvtv
     printstatus "Compiling libvtv"
     run make \
@@ -756,18 +723,18 @@ done
 # ------------------------------------------------------------------------------
 
 # we might want to open a shell here
-[ "$spawn_shell" = "y" ] && {
+test "$spawn_shell" = "y" && {
     run cd "$bdir"
     printf "You are entering a shell spawned by ccbuild, preserving the build environment\nand its variables. When you are done, use the \`exit\` command or ^D to exit.\n"
     eval "${SHELL:-/bin/sh}"
 }
 
 # delete useless directories
-[ -d "$bdir/_tmp" ] && run rm -rf "$bdir/_tmp"
-[ -d "$bdir/src" -a "$clean_src" = "y" ] && run rm -rf "$bdir/src"
+test -d "$bdir/_tmp" && run rm -rf "$bdir/_tmp"
+test -d "$bdir/src" -a "$clean_src" = "y" && run rm -rf "$bdir/src"
 
 # get the end timestamp
-[ "$timestamping" = "y" ] && end_time="$(get_timestamp)"
+test "$timestamping" = "y" && end_time="$(get_timestamp)"
 
 # print status message
 printf "Successfully built for $CPU_NAME/musl (${bdir##$CCBROOT/})%s%s\n" \

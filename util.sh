@@ -41,8 +41,9 @@ error() {
 # case statement wrapper
 str_match() {
     _str="$1"
-    shift
-    for _case in "$@"; do eval "case \"\$_str\" in $_case) return 0 ;; esac"; done
+    shift; for _case in "$@"; do
+        eval "case \"\$_str\" in $_str) return 0 ;; esac"
+    done
     return 1
 }
 
@@ -75,7 +76,7 @@ def_pkg() {
     archive="${5:-${3##*/}}"
     eval "pkg_${name}_archive=\"$archive\""
     for _i in "$CCBROOT/patches/${name}" "$CCBROOT/patches/${name}/${version}" "$CCBROOT/patches/${name}-${version}"; do
-        [ -d "$_i" ] && eval "pkg_${name}_patchpaths=\"\${pkg_${name}_patchpaths:+\$pkg_${name}_patchpaths }$_i\""
+        test -d "$_i" && eval "pkg_${name}_patchpaths=\"\${pkg_${name}_patchpaths:+\$pkg_${name}_patchpaths }$_i\""
     done
 }
 
