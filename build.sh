@@ -24,7 +24,7 @@ IFS="/"
 for i in $0; do
     test -d "$i" && cd "$i"
 done
-IFS="$(printf ' \t\n')"
+IFS="$(printf ' \n\t')"
 
 # save script cwd
 export CCBROOT="$PWD"
