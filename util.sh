@@ -118,7 +118,8 @@ check_hash() {
     read_pkg "$1"
     for _i in "$CCBROOT"/hashes/${name}/${archive}.*; do
         command -v "${_i##*/${archive}.}sum" >/dev/null 2>&1 || continue
-        str_match "$(${_i##*/${archive}.}sum "$CCBROOT/cache/$archive")" "$(while IFS= read -r line; do printf "%s" "$line*"; break; done <"$_i")" && eval "pkg_${name}_verified=y" && return
+        hash="$(${_i##*/${archive}.}sum "$CCBROOT/cache/$archive")"
+        test "${hash%% *}" = "$(while IFS= read -r line; do printf "%s" "$line"; break; done <"$_i")" && eval "pkg_${name}_verified=y" && return
         printf "%s: %s: Hash mismatch or compute failure\n" "${_i##*/${archive}.}sum" "$archive" >&2; return 1
     done
 }

@@ -44,8 +44,7 @@ def_pkg mpfr "4.2.1" "http://ftpmirror.gnu.org/mpfr/mpfr-\${version}.tar.xz"
 def_pkg isl "0.26" "http://libisl.sourceforge.io/isl-\${version}.tar.xz"
 def_pkg gmp "6.3.0" "http://ftpmirror.gnu.org/gmp/gmp-\${version}.tar.xz"
 def_pkg binutils "2.42" "http://ftpmirror.gnu.org/binutils/binutils-\${version}.tar.xz"
-def_pkg gcc "13.2.0" "http://ftpmirror.gnu.org/gcc/gcc-\${version}/gcc-\${version}.tar.xz"
-
+def_pkg gcc "14.1.0" "http://ftpmirror.gnu.org/gcc/gcc-\${version}/gcc-\${version}.tar.xz"
 
 # ------------------------------------------------------------------------------
 
@@ -114,9 +113,13 @@ test ! -r "$CCBROOT/arch/$target.conf" && error "No target specified. Run \`$0 -
 
 # set the build directory for a new toolchain
 bdir="$CCBROOT/out/${bname:=ccb-$CPU_NAME}"
-test -d "$CCBROOT/out/$bname" && i="2" && while test -d "$CCBROOT/out/$bname.$i"; do
-    i="$((i+1))"
-done && bdir="$CCBROOT/out/$bname.$i"
+test -d "$CCBROOT/out/$bname" && {
+    i="2"
+    while test -d "$CCBROOT/out/$bname.$i"; do
+        i="$((i+1))"
+    done
+    bdir="$CCBROOT/out/$bname.$i"
+}
 
 # environment variables
 CFLAGS="-pipe -Os -s -g0 -ffunction-sections -fdata-sections -fmerge-all-constants"
@@ -148,7 +151,7 @@ set +a
 # ------------------------------------------------------------------------------
 
 # print the starting status message
-test "$verbosity" != "silent" && printf "Starting build for $CPU_NAME/musl (%s) with $JOBS %s\n" "${bdir##$CCBROOT/}" "$(str_match "$JOBS" '1' && printf "thread" || printf "threads")" >&2
+test "$verbosity" != "silent" && printf "Starting build for $CPU_NAME/musl (%s) with $JOBS thread$(test "$JOBS" != "1" && printf "s")\n" "${bdir##$CCBROOT/}" >&2
 
 # check if we have thee commands needed for timestamping
 command -v date >/dev/null 2>&1 && command -v awk >/dev/null 2>&1 && timestamping="y" && start_time="$(get_timestamp)"
